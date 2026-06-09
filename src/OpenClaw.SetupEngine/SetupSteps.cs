@@ -586,9 +586,9 @@ public sealed class PreflightWslStep : SetupStep
 
             if (process.ExitCode is 0 or 3010 or 1641)
             {
-                return StepResult.Terminal(
+                return StepResult.RebootRequired(
                     "已通过本机 DISM 启用 WSL 所需 Windows 功能（适用于 Linux 的 Windows 子系统、虚拟机平台）。"
-                    + "请重启 Windows，然后重新运行 OpenClaw 安装。");
+                    + "请立即重启 Windows，重启并登录后 OpenClaw 会自动继续安装。");
             }
 
             return StepResult.Fail(
@@ -653,14 +653,14 @@ exit /b 3010
             await process.WaitForExitAsync(ct);
 
             if (process.ExitCode is 3010 or 1641)
-                return StepResult.Terminal("WSL platform install requires a restart. Reboot Windows, then run setup again.");
+                return StepResult.RebootRequired("WSL 平台安装需要重启 Windows。重启并登录后 OpenClaw 会自动继续安装。");
 
             if (process.ExitCode != 0)
                 return StepResult.Fail($"WSL platform install failed with exit code {process.ExitCode}.");
 
             var probe = await ctx.Commands.RunAsync(WslConstants.WslExePath, ["--version"], TimeSpan.FromSeconds(5), ct: ct);
             if (probe.ExitCode != 0 || LooksUnavailable(probe))
-                return StepResult.Terminal("WSL platform install completed, but Windows still reports WSL unavailable. Reboot Windows, then run setup again.");
+                return StepResult.RebootRequired("WSL 平台安装完成，但 Windows 仍报告 WSL 不可用。请重启 Windows，重启并登录后 OpenClaw 会自动继续安装。");
 
             return StepResult.Ok("WSL platform installed");
         }

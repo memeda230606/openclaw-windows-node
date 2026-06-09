@@ -97,7 +97,15 @@ public static class DeepLinkHandler
                 break;
 
             case "setup":
-                actions.OpenSetup?.Invoke();
+                if (IsTruthy(result.Parameters.GetValueOrDefault("continue"))
+                    || IsTruthy(result.Parameters.GetValueOrDefault("resume")))
+                {
+                    (actions.ContinueSetup ?? actions.OpenSetup)?.Invoke();
+                }
+                else
+                {
+                    actions.OpenSetup?.Invoke();
+                }
                 break;
 
             case "health":
@@ -270,12 +278,20 @@ public static class DeepLinkHandler
                 break;
         }
     }
+
+    private static bool IsTruthy(string? value)
+        => value != null
+           && (value.Length == 0
+               || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase));
 }
 
 public class DeepLinkActions
 {
     public Action? OpenSettings { get; set; }
     public Action? OpenSetup { get; set; }
+    public Action? ContinueSetup { get; set; }
     public Func<Task>? RunHealthCheck { get; set; }
     public Func<Task>? CheckForUpdates { get; set; }
     public Action? OpenLogFile { get; set; }

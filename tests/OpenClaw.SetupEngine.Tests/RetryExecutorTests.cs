@@ -78,6 +78,25 @@ public class RetryExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteWithRetry_RebootRequired_StopsRetrying()
+    {
+        using var logger = CreateLogger();
+        int attempts = 0;
+
+        var result = await RetryExecutor.ExecuteWithRetry(
+            () =>
+            {
+                attempts++;
+                return Task.FromResult(StepResult.RebootRequired("restart"));
+            },
+            new RetryPolicy(MaxAttempts: 5, InitialDelay: TimeSpan.FromMilliseconds(1)),
+            logger, "test-step", CancellationToken.None);
+
+        Assert.Equal(1, attempts);
+        Assert.Equal(StepOutcome.RebootRequired, result.Outcome);
+    }
+
+    [Fact]
     public async Task ExecuteWithRetry_ExceptionInAction_CatchesAndRetries()
     {
         using var logger = CreateLogger();

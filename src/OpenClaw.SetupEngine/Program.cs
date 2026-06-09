@@ -137,6 +137,7 @@ public static class Program
                 StepOutcome.Success => "✓",
                 StepOutcome.Skipped => "⊘",
                 StepOutcome.Failed or StepOutcome.FailedTerminal => "✗",
+                StepOutcome.RebootRequired => "↻",
                 null => "►",
                 _ => "?"
             };
@@ -174,6 +175,7 @@ public static class Program
             PipelineOutcome.Success => $"═══ {label} COMPLETE ═══",
             PipelineOutcome.Failed => $"═══ {label} FAILED ═══\n  {result.Message}",
             PipelineOutcome.Cancelled => $"═══ {label} CANCELLED ═══",
+            PipelineOutcome.RebootRequired => $"═══ {label} REQUIRES WINDOWS REBOOT ═══\n  {result.Message}",
             _ => "═══ UNKNOWN STATE ═══"
         });
 

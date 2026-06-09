@@ -244,6 +244,7 @@ public class DeepLinkParserTests
     [Theory]
     [InlineData("openclaw://settings", nameof(DeepLinkActions.OpenHub))]
     [InlineData("openclaw://setup", nameof(DeepLinkActions.OpenSetup))]
+    [InlineData("openclaw://setup?continue=1", nameof(DeepLinkActions.ContinueSetup))]
     [InlineData("openclaw://chat", nameof(DeepLinkActions.OpenHub))]
     [InlineData("openclaw://commandcenter", nameof(DeepLinkActions.OpenHub))]
     [InlineData("openclaw://history", nameof(DeepLinkActions.OpenHub))]
@@ -269,6 +270,7 @@ public class DeepLinkParserTests
         {
             OpenHub = _ => invoked = nameof(DeepLinkActions.OpenHub),
             OpenSetup = () => invoked = nameof(DeepLinkActions.OpenSetup),
+            ContinueSetup = () => invoked = nameof(DeepLinkActions.ContinueSetup),
             OpenLogFile = () => invoked = nameof(DeepLinkActions.OpenLogFile),
             OpenLogFolder = () => invoked = nameof(DeepLinkActions.OpenLogFolder),
             OpenConfigFolder = () => invoked = nameof(DeepLinkActions.OpenConfigFolder),

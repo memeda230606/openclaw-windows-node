@@ -102,6 +102,12 @@ public sealed partial class ProgressPage : Page
             sw.Stop();
             _pipelineFinished = true;
 
+            if (result.Outcome == PipelineOutcome.RebootRequired)
+            {
+                await ShowRebootRequiredDialogAsync(config, result);
+                return;
+            }
+
             var success = result.Outcome == PipelineOutcome.Success;
             if (success)
             {
@@ -187,6 +193,10 @@ public sealed partial class ProgressPage : Page
                 if (row.Status != StepStatus.Done)
                     row.SetStatus(StepStatus.Running);
             }
+            else if (e.Outcome == StepOutcome.RebootRequired)
+            {
+                row.SetStatus(StepStatus.RebootRequired);
+            }
             else if (e.Outcome == StepOutcome.Failed || e.Outcome == StepOutcome.FailedTerminal)
             {
                 row.SetStatus(StepStatus.Failed);
@@ -247,6 +257,84 @@ public sealed partial class ProgressPage : Page
         LogFileLauncher.RevealInExplorer(_config?.LogPath);
     }
 
+    private async Task ShowRebootRequiredDialogAsync(SetupConfig config, PipelineResult result)
+    {
+        var reason = string.IsNullOrWhiteSpace(result.Message)
+            ? "OpenClaw 需要重启 Windows 后继续安装。"
+            : result.Message!;
+        var autoResumeRegistered = true;
+
+        try
+        {
+            SetupRebootCoordinator.RegisterContinueAfterReboot(reason, config.LogPath);
+        }
+        catch (Exception ex)
+        {
+            autoResumeRegistered = false;
+            _logger?.Error($"Failed to register setup resume after reboot: {ex.Message}");
+        }
+
+        SubtitleText.Text = autoResumeRegistered
+            ? "需要重启 Windows。重启并登录后会自动继续安装。"
+            : "需要重启 Windows。自动继续注册失败，请重启后手动打开 OpenClaw 安装。";
+
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(new TextBlock
+        {
+            Text = reason,
+            TextWrapping = TextWrapping.Wrap
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = autoResumeRegistered
+                ? "点击“立即重启”后，Windows 重启并登录完成时会自动回到当前安装流程。"
+                : "点击“立即重启”后，如果没有自动回到安装流程，请手动打开 OpenClaw。",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.82
+        });
+
+        var dialog = new ContentDialog
+        {
+            Title = "需要重启 Windows",
+            Content = content,
+            PrimaryButtonText = "立即重启",
+            CloseButtonText = "稍后重启",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+
+        var choice = await dialog.ShowAsync();
+        if (choice != ContentDialogResult.Primary)
+            return;
+
+        try
+        {
+            SetupRebootCoordinator.RestartWindowsNow();
+            SubtitleText.Text = "正在重启 Windows...";
+        }
+        catch (Exception ex)
+        {
+            _logger?.Error($"Failed to restart Windows: {ex.Message}");
+            await ShowRestartFailedDialogAsync(ex.Message);
+        }
+    }
+
+    private async Task ShowRestartFailedDialogAsync(string error)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "无法立即重启",
+            Content = new TextBlock
+            {
+                Text = $"请手动重启 Windows，然后继续安装。\n\n错误：{error}",
+                TextWrapping = TextWrapping.Wrap
+            },
+            CloseButtonText = "知道了",
+            XamlRoot = XamlRoot
+        };
+        await dialog.ShowAsync();
+    }
+
     private static List<SetupStep> BuildSteps(SetupConfig config)
         => SetupStepFactory.BuildDefaultSteps()
             .Where(step => step is not RunGatewayWizardStep)
@@ -255,7 +343,7 @@ public sealed partial class ProgressPage : Page
 
 // ─── Step Row UI Element ───
 
-internal enum StepStatus { Idle, Running, Done, Failed }
+internal enum StepStatus { Idle, Running, Done, Failed, RebootRequired }
 
 internal sealed class StepRow
 {
@@ -267,6 +355,7 @@ internal sealed class StepRow
     private readonly Border _idleBadge;
     private readonly Border _checkBadge;
     private readonly Border _errorBadge;
+    private readonly Border _rebootBadge;
 
     public StepRow(string displayName)
     {
@@ -293,6 +382,9 @@ internal sealed class StepRow
         _errorBadge = CreateIconBadge("\uE711", Color.FromArgb(255, 0xE8, 0x11, 0x23), Color.FromArgb(255, 255, 255, 255));
         _errorBadge.Visibility = Visibility.Collapsed;
 
+        _rebootBadge = CreateIconBadge("\uE823", Color.FromArgb(255, 0xF7, 0xA4, 0x00), Color.FromArgb(255, 255, 255, 255));
+        _rebootBadge.Visibility = Visibility.Collapsed;
+
         var badgeContainer = new Grid
         {
             Width = 32,
@@ -304,6 +396,7 @@ internal sealed class StepRow
         badgeContainer.Children.Add(_spinner);
         badgeContainer.Children.Add(_checkBadge);
         badgeContainer.Children.Add(_errorBadge);
+        badgeContainer.Children.Add(_rebootBadge);
 
         var grid = new Grid
         {
@@ -325,8 +418,9 @@ internal sealed class StepRow
         _idleBadge.Visibility = status == StepStatus.Idle ? Visibility.Visible : Visibility.Collapsed;
         _checkBadge.Visibility = status == StepStatus.Done ? Visibility.Visible : Visibility.Collapsed;
         _errorBadge.Visibility = status == StepStatus.Failed ? Visibility.Visible : Visibility.Collapsed;
+        _rebootBadge.Visibility = status == StepStatus.RebootRequired ? Visibility.Visible : Visibility.Collapsed;
         _label.Opacity = status == StepStatus.Idle ? 0.72 : 1.0;
-        _label.FontWeight = status == StepStatus.Running
+        _label.FontWeight = status is StepStatus.Running or StepStatus.RebootRequired
             ? Microsoft.UI.Text.FontWeights.SemiBold
             : Microsoft.UI.Text.FontWeights.Normal;
     }

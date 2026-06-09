@@ -19,7 +19,7 @@ public abstract class SetupStep
 
 // ─── Pipeline Result ───
 
-public enum PipelineOutcome { Success, Failed, Cancelled }
+public enum PipelineOutcome { Success, Failed, Cancelled, RebootRequired }
 
 public sealed record PipelineResult(PipelineOutcome Outcome, string? FailedStepId = null, string? Message = null)
 {
@@ -28,6 +28,7 @@ public sealed record PipelineResult(PipelineOutcome Outcome, string? FailedStepI
         PipelineOutcome.Success => 0,
         PipelineOutcome.Failed => 1,
         PipelineOutcome.Cancelled => 3,
+        PipelineOutcome.RebootRequired => 4,
         _ => 1
     };
 }
@@ -155,6 +156,13 @@ public sealed class SetupPipeline
             {
                 _completedSteps.Add(step);
                 continue;
+            }
+
+            if (result.Outcome == StepOutcome.RebootRequired)
+            {
+                ctx.Logger.Warn($"Step '{step.Id}' requires a Windows reboot before setup can continue: {result.Message}");
+                ctx.Journal.RecordPipelineEvent("pipeline_reboot_required", $"step={step.Id}, message={result.Message}");
+                return new PipelineResult(PipelineOutcome.RebootRequired, step.Id, result.Message);
             }
 
             // Step failed — handle rollback if configured

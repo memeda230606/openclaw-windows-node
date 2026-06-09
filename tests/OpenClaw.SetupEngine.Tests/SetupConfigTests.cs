@@ -338,10 +338,18 @@ public class SetupConfigTests : IDisposable
     }
 
     [Fact]
+    public void StepResult_RebootRequired_IsNotSuccess()
+    {
+        Assert.False(StepResult.RebootRequired("restart").IsSuccess);
+        Assert.Equal(StepOutcome.RebootRequired, StepResult.RebootRequired("restart").Outcome);
+    }
+
+    [Fact]
     public void PipelineResult_ExitCodes()
     {
         Assert.Equal(0, new PipelineResult(PipelineOutcome.Success).ExitCode);
         Assert.Equal(1, new PipelineResult(PipelineOutcome.Failed).ExitCode);
         Assert.Equal(3, new PipelineResult(PipelineOutcome.Cancelled).ExitCode);
+        Assert.Equal(4, new PipelineResult(PipelineOutcome.RebootRequired).ExitCode);
     }
 }

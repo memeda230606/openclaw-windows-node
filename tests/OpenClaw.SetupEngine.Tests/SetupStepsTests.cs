@@ -939,7 +939,7 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
-    public async Task PreflightWsl_FailsTerminalWhenWslEmitsHcsServiceNotAvailable()
+    public async Task PreflightWsl_ReturnsRebootRequiredWhenWslFeaturesWereEnabled()
     {
         var featureEnableAttempted = false;
         var commands = new FakeCommandRunner(args =>
@@ -958,12 +958,12 @@ public class SetupStepsTests : IDisposable
         {
             featureEnableAttempted = true;
             Assert.Contains("虚拟机平台", message);
-            return Task.FromResult(StepResult.Terminal("已启用 WSL Windows 功能，请重启 Windows 后重试。"));
+            return Task.FromResult(StepResult.RebootRequired("已启用 WSL Windows 功能，请重启 Windows 后继续安装。"));
         };
 
         var result = await new PreflightWslStep().ExecuteAsync(ctx, CancellationToken.None);
 
-        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
+        Assert.Equal(StepOutcome.RebootRequired, result.Outcome);
         Assert.True(featureEnableAttempted);
         Assert.Contains("重启 Windows", result.Message);
     }

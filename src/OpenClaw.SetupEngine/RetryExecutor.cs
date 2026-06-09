@@ -41,7 +41,7 @@ public static class RetryExecutor
                 lastResult = StepResult.Fail($"Unhandled exception: {ex.Message}", ex);
             }
 
-            if (lastResult.IsSuccess || lastResult.Outcome == StepOutcome.FailedTerminal)
+            if (lastResult.IsSuccess || lastResult.Outcome is StepOutcome.FailedTerminal or StepOutcome.RebootRequired)
                 return lastResult;
 
             if (attempt < policy.MaxAttempts)

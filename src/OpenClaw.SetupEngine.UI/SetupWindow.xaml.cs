@@ -25,7 +25,7 @@ public sealed partial class SetupWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
-    public SetupWindow(string? configPath = null)
+    public SetupWindow(string? configPath = null, bool continueSetupAfterReboot = false)
     {
         InitializeComponent();
         Active = this;
@@ -87,7 +87,15 @@ public sealed partial class SetupWindow : Window
             return;
         }
 
-        RootFrame.Navigate(typeof(WelcomePage), _config);
+        if (continueSetupAfterReboot)
+        {
+            SetupRebootCoordinator.ClearPendingMarker();
+            RootFrame.Navigate(typeof(ProgressPage), _config);
+        }
+        else
+        {
+            RootFrame.Navigate(typeof(WelcomePage), _config);
+        }
     }
 
     public void NavigateToCapabilities() => RootFrame.Navigate(typeof(CapabilitiesPage), _config);

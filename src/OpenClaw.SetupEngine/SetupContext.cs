@@ -291,7 +291,7 @@ public sealed class PairingConfig
 
 // ─── Step Result ───
 
-public enum StepOutcome { Success, Skipped, Failed, FailedTerminal }
+public enum StepOutcome { Success, Skipped, Failed, FailedTerminal, RebootRequired }
 
 public sealed record StepResult(StepOutcome Outcome, string? Message = null, Exception? Error = null)
 {
@@ -299,6 +299,7 @@ public sealed record StepResult(StepOutcome Outcome, string? Message = null, Exc
     public static StepResult Skip(string reason) => new(StepOutcome.Skipped, reason);
     public static StepResult Fail(string message, Exception? ex = null) => new(StepOutcome.Failed, message, ex);
     public static StepResult Terminal(string message, Exception? ex = null) => new(StepOutcome.FailedTerminal, message, ex);
+    public static StepResult RebootRequired(string message, Exception? ex = null) => new(StepOutcome.RebootRequired, message, ex);
 
     public bool IsSuccess => Outcome is StepOutcome.Success or StepOutcome.Skipped;
 }

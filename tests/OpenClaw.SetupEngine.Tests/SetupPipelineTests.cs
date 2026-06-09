@@ -110,6 +110,32 @@ public class SetupPipelineTests
     }
 
     [Fact]
+    public async Task RunAsync_RebootRequired_DoesNotRollbackAndReturnsRebootRequired()
+    {
+        var rollbackOrder = new List<string>();
+        var config = new SetupConfig { RollbackOnFailure = true };
+        var ctx = CreateContext(config);
+
+        var pipeline = new SetupPipeline([
+            new MockStep("s1",
+                (_, _) => Task.FromResult(StepResult.Ok()),
+                (_, _) => { rollbackOrder.Add("s1"); return Task.CompletedTask; }),
+            new MockStep("s2",
+                (_, _) => Task.FromResult(StepResult.RebootRequired("restart")),
+                (_, _) => { rollbackOrder.Add("s2"); return Task.CompletedTask; }),
+            new MockStep("s3", (_, _) => Task.FromResult(StepResult.Ok())),
+        ]);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.RebootRequired, result.Outcome);
+        Assert.Equal("s2", result.FailedStepId);
+        Assert.Equal("restart", result.Message);
+        Assert.Empty(rollbackOrder);
+        Assert.Contains(ctx.Journal.Entries, e => e.Event == "pipeline_reboot_required");
+    }
+
+    [Fact]
     public async Task RunAsync_StepFails_WithRollback_CleansUpFailedStepFirst()
     {
         var rollbackOrder = new List<string>();

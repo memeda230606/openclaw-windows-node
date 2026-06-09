@@ -200,7 +200,9 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
     private string[]? _startupArgs;
     private string? _pendingProtocolUri;
     private bool _isPostSetupRestart;
+    private bool _continueSetupAfterReboot;
     private string? _postSetupLaunch;
+    private const string ContinueSetupAfterRebootArg = "--continue-setup-after-reboot";
     // OPENCLAW_TRAY_DATA_DIR isolates a test instance: settings, logs, run marker,
     // crash log, exec approvals, and the single-instance mutex name all derive from it.
     private static readonly string? DataDirOverride =
@@ -360,6 +362,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         _startupArgs = Environment.GetCommandLineArgs();
         _dispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         _isPostSetupRestart = HasArg(_startupArgs, "--post-setup-restart");
+        _continueSetupAfterReboot = HasArg(_startupArgs, ContinueSetupAfterRebootArg);
         _postSetupLaunch = GetArgValue(_startupArgs, "--post-setup-launch");
 
         // -----------------------------------------------------------------------
@@ -419,6 +422,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             var deepLink = protocolUri
                 ?? (_startupArgs.Length > 1 && _startupArgs[1].StartsWith("openclaw://", StringComparison.OrdinalIgnoreCase)
                     ? _startupArgs[1] : null)
+                ?? (_continueSetupAfterReboot ? "openclaw://setup?continue=1" : null)
                 ?? (string.Equals(_postSetupLaunch, "chat", StringComparison.OrdinalIgnoreCase)
                     ? "openclaw://chat" : null);
             if (deepLink != null)
@@ -602,7 +606,12 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         var setupShownDuringStartup = false;
         try
         {
-            if ((!_isPostSetupRestart && RequiresSetup(_settings)) ||
+            if (_continueSetupAfterReboot)
+            {
+                await ShowOnboardingAsync(continueAfterReboot: true);
+                setupShownDuringStartup = true;
+            }
+            else if ((!_isPostSetupRestart && RequiresSetup(_settings)) ||
                 Environment.GetEnvironmentVariable("OPENCLAW_FORCE_ONBOARDING") == "1")
             {
                 await ShowOnboardingAsync();
@@ -2837,7 +2846,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         ShowHub("channels");
     }
 
-    private async Task ShowOnboardingAsync()
+    private async Task ShowOnboardingAsync(bool continueAfterReboot = false)
     {
         if (_settings == null)
             return;
@@ -2846,6 +2855,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         {
             var existingSetupWindow = _setupWindow;
             await existingSetupWindow.WaitForInitialContentReadyAsync();
+            if (continueAfterReboot && ReferenceEquals(_setupWindow, existingSetupWindow) && !existingSetupWindow.IsClosed)
+                existingSetupWindow.NavigateToProgress();
             if (ReferenceEquals(_setupWindow, existingSetupWindow) && !existingSetupWindow.IsClosed)
                 existingSetupWindow.BringToFrontForSetupLaunch();
             return;
@@ -2853,7 +2864,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
 
         try
         {
-            var setupWindow = new SetupWindow();
+            var setupWindow = new SetupWindow(continueSetupAfterReboot: continueAfterReboot);
             _setupWindow = setupWindow;
             setupWindow.AdvancedSetupRequested += OnSetupAdvancedSetupRequested;
             setupWindow.SetupCompleted += OnSetupCompleted;
@@ -3366,6 +3377,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         {
             OpenSettings = ShowSettings,
             OpenSetup = () => _ = ShowOnboardingAsync(),
+            ContinueSetup = () => _ = ShowOnboardingAsync(continueAfterReboot: true),
             RunHealthCheck = () => RunHealthCheckAsync(userInitiated: true),
             CheckForUpdates = _updateCoordinator!.CheckForUpdatesUserInitiatedAsync,
             OpenLogFile = OpenLogFile,

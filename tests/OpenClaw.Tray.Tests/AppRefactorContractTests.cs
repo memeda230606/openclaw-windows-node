@@ -129,10 +129,13 @@ public sealed class AppRefactorContractTests
     {
         var source = ReadAppSources();
 
-        Assert.Contains("new SetupWindow()", source);
+        Assert.Contains("new SetupWindow(continueSetupAfterReboot: continueAfterReboot)", source);
         Assert.Contains("setupWindow.SetupCompleted += OnSetupCompleted", source);
         Assert.Contains("RestartAfterSetupAsync", source);
         Assert.Contains("\"--post-setup-restart\"", source);
+        Assert.Contains("\"--continue-setup-after-reboot\"", source);
+        Assert.Contains("\"openclaw://setup?continue=1\"", source);
+        Assert.Contains("ShowOnboardingAsync(bool continueAfterReboot = false)", source);
         Assert.Contains("\"--wait-for-pid\"", source);
         Assert.Contains("\"--post-setup-launch\"", source);
         Assert.Contains("? \"openclaw://chat\" : null", source);
