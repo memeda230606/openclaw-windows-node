@@ -467,7 +467,7 @@ public sealed class PreflightWslStep : SetupStep
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
         var versionResult = await ctx.Commands.RunAsync(WslConstants.WslExePath, ["--version"], TimeSpan.FromSeconds(5), ct: ct);
-        if (versionResult.ExitCode != 0 && LooksUnavailable(versionResult))
+        if (versionResult.ExitCode != 0 && (LooksUnavailable(versionResult) || LooksTooOldForVersionCommand(versionResult)))
         {
             var installResult = await InstallWslPlatformAsync(ctx, ct);
             if (!installResult.IsSuccess)
@@ -621,7 +621,10 @@ public sealed class PreflightWslStep : SetupStep
         var text = NormalizeWslOutput($"{result.Stdout}\n{result.Stderr}");
         return text.Contains("Invalid command line option", StringComparison.OrdinalIgnoreCase)
             || text.Contains("unrecognized option", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("unknown option", StringComparison.OrdinalIgnoreCase);
+            || text.Contains("unknown option", StringComparison.OrdinalIgnoreCase)
+            || (text.Contains("wsl.exe", StringComparison.OrdinalIgnoreCase)
+                && text.Contains("--install", StringComparison.OrdinalIgnoreCase)
+                && text.Contains("--status", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string NormalizeWslOutput(string value)

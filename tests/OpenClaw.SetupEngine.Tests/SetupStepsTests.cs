@@ -272,19 +272,34 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
-    public async Task PreflightWsl_FailsWithUpdateMessageWhenVersionCommandIsUnsupported()
+    public async Task PreflightWsl_UsesOssWslCoreWhenVersionCommandIsUnsupported()
     {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "version": "test"
+        }
+        """);
         var commands = new FakeCommandRunner(args =>
             args is ["--version"]
                 ? new CommandResult(1, "", "Invalid command line option: --version", TimeSpan.Zero, TimedOut: false)
-                : Ok());
-        var ctx = CreateContext(commands: commands);
+                : Fail($"unexpected args: {string.Join(' ', args)}"));
+        var ctx = CreateContext(new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        }, commands);
 
         var result = await new PreflightWslStep().ExecuteAsync(ctx, CancellationToken.None);
 
-        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
-        Assert.Contains("too old", result.Message);
-        Assert.Contains(WslInstallSupport.UpdateUrl, result.Message);
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("wslCore.assets", result.Message);
+        Assert.Single(commands.Calls);
     }
 
     [Fact]

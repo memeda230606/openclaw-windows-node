@@ -97,7 +97,7 @@
     // Local JSON manifest path for offline/test runs. Takes precedence over ManifestUrl when set.
     "ManifestPath": null,
     // true = use official URLs if the manifest is unavailable or invalid
-    "AllowOfficialFallback": true
+    "AllowOfficialFallback": false
   },
 
   // ─── Node Capabilities ───

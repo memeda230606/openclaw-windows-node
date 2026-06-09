@@ -67,11 +67,13 @@ public sealed class InstallerIssAssertionTests
         Assert.Contains(@"#define MyCompression ""lzma""", iss);
         Assert.Contains(@"#define MySolidCompression ""yes""", iss);
         Assert.Contains("OutputBaseFilename=OpenClawCompanion-Setup-{#MyAppArch}", iss);
+        Assert.Contains("LanguageName=简体中文", iss);
+        Assert.Contains("WelcomeLabel1=欢迎使用 [name] 安装向导", iss);
         Assert.Contains(@"Name: ""{group}\{#MyAppName}""; Filename: ""{app}\{#MyAppExeName}""", iss);
-        Assert.Contains(@"Name: ""{group}\OpenClaw Gateway Setup""; Filename: ""{app}\{#MyAppExeName}""; Parameters: ""openclaw://setup""", iss);
-        Assert.Contains(@"Name: ""{group}\OpenClaw Companion Settings""; Filename: ""{app}\{#MyAppExeName}""; Parameters: ""openclaw://commandcenter""", iss);
-        Assert.Contains(@"Name: ""{group}\OpenClaw Chat""; Filename: ""{app}\{#MyAppExeName}""; Parameters: ""openclaw://chat""", iss);
-        Assert.Contains(@"Name: ""{group}\Check for Updates""; Filename: ""{app}\{#MyAppExeName}""; Parameters: ""openclaw://check-updates""", iss);
+        Assert.Contains(@"Name: ""{group}\OpenClaw 网关设置""; Filename: ""{app}\{#MyAppExeName}""; Parameters: ""openclaw://setup""", iss);
+        Assert.Contains(@"Name: ""{group}\OpenClaw Companion 设置""; Filename: ""{app}\{#MyAppExeName}""; Parameters: ""openclaw://commandcenter""", iss);
+        Assert.Contains(@"Name: ""{group}\OpenClaw 聊天""; Filename: ""{app}\{#MyAppExeName}""; Parameters: ""openclaw://chat""", iss);
+        Assert.DoesNotContain(@"Parameters: ""openclaw://check-updates""", iss);
     }
 
     [Fact]
@@ -84,7 +86,7 @@ public sealed class InstallerIssAssertionTests
         Assert.Contains("Uninstall-LocalGateway.ps1", iss);
         Assert.Contains("UninstallSilent()", iss);
         Assert.Contains("LocalGatewayCleanupRequested := True", iss);
-        Assert.Contains("OpenClawGateway WSL distro", iss);
+        Assert.Contains("OpenClawGateway WSL 发行版", iss);
         Assert.Contains("MB_YESNO", iss);
         Assert.Contains("ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe')", iss);
         Assert.Contains("ewWaitUntilTerminated", iss);

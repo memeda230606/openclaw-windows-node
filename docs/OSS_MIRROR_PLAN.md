@@ -9,7 +9,8 @@
 - 支持从同一个 manifest 解析 Ubuntu 24.04 WSL rootfs，下载到本地缓存、校验 `sha256`/`size` 后通过 `wsl --import ... --version 2` 创建网关实例。
 - 支持从同一个 manifest 解析 Microsoft WSL x64/arm64 MSI。缺少 WSL 平台时先下载到本地缓存、校验 `sha256`/`size`，再通过提权 `msiexec /i ... /qn /norestart` 安装。
 - `Gateway.InstallUrl` 仍然优先级最高，便于临时调试和灰度。
-- OSS manifest 不可用时默认回退官方 URL、`wsl.exe --install --no-distribution` 或 `wsl.exe --install --web-download`；可通过 `AllowOfficialFallback=false` 改为直接失败。
+- 默认禁用官方回退：OSS manifest 不可用或校验失败时直接失败，避免安装流程悄悄回到国外 URL、`wsl.exe --install --no-distribution` 或 `wsl.exe --install --web-download`。只有显式设置 `AllowOfficialFallback=true` 才允许官方回退。
+- 长旺 OSS 测试构建默认禁用 GitHub 自更新检查，避免安装后跳到 GitHub Release 下载应用更新；如需临时测试官方更新，可设置 `OPENCLAW_ENABLE_GITHUB_UPDATES=1`。
 
 当前 manifest 示例：
 
@@ -62,7 +63,7 @@
     "Enabled": true,
     "ManifestUrl": "https://example-oss.example.com/openclaw/dependencies.json",
     "ManifestPath": null,
-    "AllowOfficialFallback": true
+    "AllowOfficialFallback": false
   }
 }
 ```

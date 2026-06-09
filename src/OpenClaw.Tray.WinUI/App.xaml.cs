@@ -40,6 +40,19 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         InstallUpdateSingleFileExecutableName = "OpenClaw.Tray.WinUI",
     };
 
+    private static bool IsGitHubUpdateCheckEnabled()
+    {
+        var explicitOptIn = Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_GITHUB_UPDATES");
+        if (string.Equals(explicitOptIn, "1", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(explicitOptIn, "true", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(explicitOptIn, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return !AppVersionInfo.Version.Contains("longwang", StringComparison.OrdinalIgnoreCase);
+    }
+
     private TrayIcon? _trayIcon;
     private GatewayConnectionManager? _connectionManager;
     private GatewayRegistry? _gatewayRegistry;
@@ -479,6 +492,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         // Check for updates before launching. Skip in test instances — no UI dialogs,
         // no network calls, no startup delay.
         if (DataDirOverride is null &&
+            IsGitHubUpdateCheckEnabled() &&
             Environment.GetEnvironmentVariable("OPENCLAW_SKIP_UPDATE_CHECK") != "1")
         {
             var shouldLaunch = await _updateCoordinator.CheckForUpdatesAsync();
@@ -3058,7 +3072,26 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
     }
     void IAppCommands.ShowVoiceOverlay() => ShowHub("voice");
     void IAppCommands.ShowChat() => ShowChatWindow();
-    void IAppCommands.CheckForUpdates() => _ = _updateCoordinator!.CheckForUpdatesUserInitiatedAsync();
+    void IAppCommands.CheckForUpdates()
+    {
+        if (!IsGitHubUpdateCheckEnabled())
+        {
+            Logger.Info("[Update] GitHub update check skipped for OSS mirror build");
+            if (_appState != null)
+            {
+                _appState.UpdateInfo = new UpdateCommandCenterInfo
+                {
+                    Status = "Skipped",
+                    CurrentVersion = AppVersionInfo.Version,
+                    CheckedAt = DateTime.UtcNow,
+                    Detail = "GitHub updates are disabled for this OSS mirror build"
+                };
+            }
+            return;
+        }
+
+        _ = _updateCoordinator!.CheckForUpdatesUserInitiatedAsync();
+    }
     void IAppCommands.ShowOnboarding() => _ = ShowOnboardingAsync();
     void IAppCommands.ShowConnectionStatus() => ShowConnectionStatusWindow();
     void IAppCommands.NotifySettingsSaved() => OnSettingsSaved(this, EventArgs.Empty);
