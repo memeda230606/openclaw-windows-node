@@ -77,6 +77,19 @@ public sealed class InstallerIssAssertionTests
     }
 
     [Fact]
+    public void Installer_UsesFixedInstallChoicesInsteadOfOptionalCheckboxes()
+    {
+        var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
+
+        Assert.DoesNotContain("[Tasks]", iss);
+        Assert.DoesNotContain("Flags: unchecked", iss);
+        Assert.DoesNotContain("postinstall", iss);
+        Assert.Contains(@"Name: ""{autodesktop}\{#MyAppName}""; Filename: ""{app}\{#MyAppExeName}""", iss);
+        Assert.Contains(@"Name: ""{userstartup}\{#MyAppName}""; Filename: ""{app}\{#MyAppExeName}""", iss);
+        Assert.Contains(@"Filename: ""{app}\{#MyAppExeName}""; Flags: nowait skipifsilent; Check: ShouldLaunchTray", iss);
+    }
+
+    [Fact]
     public void Installer_RemovesGeneratedAppStateOnlyAfterGatewayCleanup()
     {
         var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
