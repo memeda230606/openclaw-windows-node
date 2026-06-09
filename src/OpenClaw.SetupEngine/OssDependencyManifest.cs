@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
@@ -10,11 +11,19 @@ internal sealed class OssDependencyManifest
     public string? Version { get; set; }
     public OssDependencyAsset? InstallCli { get; set; }
     public OssDependencyAsset? UbuntuWslRootfs { get; set; }
+    public OssWslCoreManifest? WslCore { get; set; }
+}
+
+internal sealed class OssWslCoreManifest
+{
+    public string? Version { get; set; }
+    public Dictionary<string, OssDependencyAsset>? Assets { get; set; }
 }
 
 internal sealed class OssDependencyAsset
 {
     public string? Url { get; set; }
+    public string? MirrorUrl { get; set; }
     public string? Sha256 { get; set; }
     public long? Size { get; set; }
     public Dictionary<string, string>? Environment { get; set; }
@@ -55,6 +64,22 @@ internal sealed record WslRootfsResolution(
         new(true, source, null, null);
 
     public static WslRootfsResolution Fail(string message) =>
+        new(false, "oss-manifest", null, message);
+}
+
+internal sealed record WslCoreResolution(
+    bool Success,
+    string Source,
+    string? LocalPath,
+    string? ErrorMessage)
+{
+    public static WslCoreResolution Ok(string localPath, string source) =>
+        new(true, source, localPath, null);
+
+    public static WslCoreResolution OfficialFallback(string source) =>
+        new(true, source, null, null);
+
+    public static WslCoreResolution Fail(string message) =>
         new(false, "oss-manifest", null, message);
 }
 
@@ -162,14 +187,14 @@ internal static class OssDependencyResolver
         var fileName = SafeFileName(Path.GetFileName(parsedRootfsUrl.LocalPath), "ubuntu-24.04-wsl.rootfs.tar.gz");
         var localPath = Path.Combine(cacheDir, $"{expectedSha256[..12]}-{fileName}");
 
-        var cached = await TryVerifyFileAsync(localPath, expectedSha256, asset.Size, ct);
+        var cached = await TryVerifyFileAsync(localPath, expectedSha256, asset.Size, "OSS ubuntuWslRootfs", ct);
         if (!cached.Success)
         {
             var tempPath = Path.Combine(cacheDir, $".{Guid.NewGuid():N}.download");
             try
             {
                 await DownloadAssetFileAsync(parsedRootfsUrl, tempPath, ct);
-                var downloaded = await TryVerifyFileAsync(tempPath, expectedSha256, asset.Size, ct);
+                var downloaded = await TryVerifyFileAsync(tempPath, expectedSha256, asset.Size, "OSS ubuntuWslRootfs", ct);
                 if (!downloaded.Success)
                     return FallBackWslRootfsOrFail(config.Oss, logger, downloaded.ErrorMessage!);
 
@@ -207,6 +232,85 @@ internal static class OssDependencyResolver
             ubuntu_wsl_rootfs_sha256 = expectedSha256,
         });
         return WslRootfsResolution.Ok(localPath, "oss-manifest");
+    }
+
+    public static Task<WslCoreResolution> ResolveWslCoreMsiAsync(
+        SetupConfig config,
+        string localDataDir,
+        SetupLogger logger,
+        CancellationToken ct) =>
+        ResolveWslCoreMsiAsync(config, localDataDir, logger, RuntimeInformation.OSArchitecture, ct);
+
+    internal static async Task<WslCoreResolution> ResolveWslCoreMsiAsync(
+        SetupConfig config,
+        string localDataDir,
+        SetupLogger logger,
+        Architecture architecture,
+        CancellationToken ct)
+    {
+        if (!config.Oss.Enabled)
+            return WslCoreResolution.OfficialFallback("official-default");
+
+        if (!TryGetWslCoreArchitectureKey(architecture, out var architectureKey))
+        {
+            return FallBackWslCoreOrFail(
+                config.Oss,
+                logger,
+                $"OSS wslCore MSI mirror only supports x64 and arm64, got {architecture}.");
+        }
+
+        var manifestResult = await TryLoadManifestAsync(config.Oss, ct);
+        if (!manifestResult.Success)
+            return FallBackWslCoreOrFail(config.Oss, logger, manifestResult.ErrorMessage!);
+
+        var manifest = manifestResult.Manifest;
+        var wslCore = manifest.WslCore;
+        if (wslCore?.Assets is null || wslCore.Assets.Count == 0)
+            return FallBackWslCoreOrFail(config.Oss, logger, "OSS manifest does not define wslCore.assets.");
+
+        var asset = FindArchitectureAsset(wslCore.Assets, architectureKey);
+        if (asset is null)
+            return FallBackWslCoreOrFail(config.Oss, logger, $"OSS manifest does not define wslCore.assets.{architectureKey}.");
+
+        var msiUrl = GetAssetUrl(asset);
+        if (string.IsNullOrWhiteSpace(msiUrl))
+            return FallBackWslCoreOrFail(config.Oss, logger, $"OSS manifest wslCore.assets.{architectureKey}.url is required.");
+
+        if (!Uri.TryCreate(msiUrl, UriKind.Absolute, out var parsedMsiUrl) ||
+            !string.Equals(parsedMsiUrl.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+        {
+            return FallBackWslCoreOrFail(config.Oss, logger, $"OSS wslCore.assets.{architectureKey}.url must be HTTPS: {msiUrl}");
+        }
+
+        if (string.IsNullOrWhiteSpace(asset.Sha256))
+            return FallBackWslCoreOrFail(config.Oss, logger, $"OSS manifest wslCore.assets.{architectureKey}.sha256 is required.");
+
+        if (!TryNormalizeSha256(asset.Sha256, out var expectedSha256))
+            return FallBackWslCoreOrFail(config.Oss, logger, $"OSS manifest wslCore.assets.{architectureKey}.sha256 must be a 64-character hex SHA-256 digest.");
+
+        var cacheResult = await DownloadAndCacheFileAssetAsync(
+            parsedMsiUrl,
+            asset,
+            expectedSha256,
+            localDataDir,
+            "wsl-core",
+            $"wsl-core-{architectureKey}.msi",
+            "OSS wslCore MSI",
+            ct);
+        if (!cacheResult.Success)
+            return FallBackWslCoreOrFail(config.Oss, logger, cacheResult.ErrorMessage!);
+
+        logger.Info("Using OSS dependency manifest for WSL core MSI", new
+        {
+            source = manifestResult.Source,
+            manifest_version = manifest.Version,
+            wsl_core_version = wslCore.Version,
+            wsl_core_architecture = architectureKey,
+            wsl_core_msi_url = msiUrl,
+            wsl_core_msi_path = cacheResult.LocalPath,
+            wsl_core_msi_sha256 = expectedSha256,
+        });
+        return WslCoreResolution.Ok(cacheResult.LocalPath!, "oss-manifest");
     }
 
     private static async Task<ScriptAssetDownloadResult> TryDownloadAndVerifyScriptAssetAsync(
@@ -317,34 +421,89 @@ internal static class OssDependencyResolver
         await input.CopyToAsync(output, ct);
     }
 
+    private static async Task<FileAssetCacheResult> DownloadAndCacheFileAssetAsync(
+        Uri uri,
+        OssDependencyAsset asset,
+        string expectedSha256,
+        string localDataDir,
+        string cacheName,
+        string fallbackFileName,
+        string assetLabel,
+        CancellationToken ct)
+    {
+        var cacheDir = Path.Combine(localDataDir, "oss-cache", cacheName);
+        Directory.CreateDirectory(cacheDir);
+        var fileName = SafeFileName(Path.GetFileName(uri.LocalPath), fallbackFileName);
+        var localPath = Path.Combine(cacheDir, $"{expectedSha256[..12]}-{fileName}");
+
+        var cached = await TryVerifyFileAsync(localPath, expectedSha256, asset.Size, assetLabel, ct);
+        if (!cached.Success)
+        {
+            var tempPath = Path.Combine(cacheDir, $".{Guid.NewGuid():N}.download");
+            try
+            {
+                await DownloadAssetFileAsync(uri, tempPath, ct);
+                var downloaded = await TryVerifyFileAsync(tempPath, expectedSha256, asset.Size, assetLabel, ct);
+                if (!downloaded.Success)
+                    return FileAssetCacheResult.Fail(downloaded.ErrorMessage!);
+
+                if (File.Exists(localPath))
+                    File.Delete(localPath);
+                File.Move(tempPath, localPath);
+            }
+            catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                return FileAssetCacheResult.Fail($"Unable to download {assetLabel}: {ex.Message}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or InvalidOperationException)
+            {
+                return FileAssetCacheResult.Fail($"Unable to download {assetLabel}: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        return FileAssetCacheResult.Ok(localPath);
+    }
+
     private static async Task<FileVerifyResult> TryVerifyFileAsync(
         string path,
         string expectedSha256,
         long? expectedSize,
+        string assetLabel,
         CancellationToken ct)
     {
         try
         {
             if (!File.Exists(path))
-                return FileVerifyResult.Fail("OSS ubuntuWslRootfs is not cached.");
+                return FileVerifyResult.Fail($"{assetLabel} is not cached.");
 
             var info = new FileInfo(path);
             if (expectedSize is { } size && info.Length != size)
-                return FileVerifyResult.Fail($"OSS ubuntuWslRootfs size mismatch: expected {size}, got {info.Length}.");
+                return FileVerifyResult.Fail($"{assetLabel} size mismatch: expected {size}, got {info.Length}.");
 
             await using var stream = File.OpenRead(path);
             var actualSha256 = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
             if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
             {
                 return FileVerifyResult.Fail(
-                    $"OSS ubuntuWslRootfs SHA-256 mismatch: expected {expectedSha256}, got {actualSha256}.");
+                    $"{assetLabel} SHA-256 mismatch: expected {expectedSha256}, got {actualSha256}.");
             }
 
             return FileVerifyResult.Ok();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return FileVerifyResult.Fail($"Unable to verify OSS ubuntuWslRootfs: {ex.Message}");
+            return FileVerifyResult.Fail($"Unable to verify {assetLabel}: {ex.Message}");
         }
     }
 
@@ -430,6 +589,42 @@ internal static class OssDependencyResolver
         return WslRootfsResolution.OfficialFallback("official-fallback");
     }
 
+    private static WslCoreResolution FallBackWslCoreOrFail(OssMirrorConfig config, SetupLogger logger, string reason)
+    {
+        if (!config.AllowOfficialFallback)
+            return WslCoreResolution.Fail($"OSS dependency manifest failed and official fallback is disabled: {reason}");
+
+        logger.Warn($"OSS wslCore unavailable; falling back to wsl.exe platform install. {reason}");
+        return WslCoreResolution.OfficialFallback("official-fallback");
+    }
+
+    private static OssDependencyAsset? FindArchitectureAsset(
+        Dictionary<string, OssDependencyAsset> assets,
+        string architectureKey)
+    {
+        foreach (var (key, value) in assets)
+        {
+            if (key.Equals(architectureKey, StringComparison.OrdinalIgnoreCase))
+                return value;
+        }
+
+        return null;
+    }
+
+    private static string? GetAssetUrl(OssDependencyAsset asset)
+        => string.IsNullOrWhiteSpace(asset.Url) ? asset.MirrorUrl : asset.Url;
+
+    private static bool TryGetWslCoreArchitectureKey(Architecture architecture, out string architectureKey)
+    {
+        architectureKey = architecture switch
+        {
+            Architecture.X64 => "x64",
+            Architecture.Arm64 => "arm64",
+            _ => ""
+        };
+        return architectureKey.Length > 0;
+    }
+
     private static string SafeFileName(string? candidate, string fallback)
     {
         var fileName = string.IsNullOrWhiteSpace(candidate) ? fallback : candidate;
@@ -491,6 +686,12 @@ internal static class OssDependencyResolver
     {
         public static FileVerifyResult Ok() => new(true, null);
         public static FileVerifyResult Fail(string message) => new(false, message);
+    }
+
+    private sealed record FileAssetCacheResult(bool Success, string? LocalPath, string? ErrorMessage)
+    {
+        public static FileAssetCacheResult Ok(string localPath) => new(true, localPath, null);
+        public static FileAssetCacheResult Fail(string message) => new(false, null, message);
     }
 
     private sealed record EnvironmentValidationResult(

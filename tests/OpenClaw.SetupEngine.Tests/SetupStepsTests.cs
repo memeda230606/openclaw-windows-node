@@ -425,6 +425,92 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolveWslCoreMsi_DownloadsArchitectureAssetFromOssManifest()
+    {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        var msiBytes = Encoding.UTF8.GetBytes("wsl msi test payload");
+        var msiSha256 = Convert.ToHexString(SHA256.HashData(msiBytes)).ToLowerInvariant();
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "version": "test",
+            "wslCore": {
+                "version": "2.7.3",
+                "assets": {
+                    "x64": {
+                        "url": "https://oss.example.test/openclaw/wsl/core/wsl.x64.msi",
+                        "sha256": "__SHA256__",
+                        "size": __SIZE__
+                    }
+                }
+            }
+        }
+        """
+            .Replace("__SHA256__", msiSha256, StringComparison.Ordinal)
+            .Replace("__SIZE__", msiBytes.Length.ToString(), StringComparison.Ordinal));
+        var config = new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        };
+
+        OssDependencyResolver.AssetFileDownloaderOverride = (uri, outputPath, _) =>
+        {
+            Assert.Equal("https://oss.example.test/openclaw/wsl/core/wsl.x64.msi", uri.ToString());
+            File.WriteAllBytes(outputPath, msiBytes);
+            return Task.CompletedTask;
+        };
+
+        var resolution = await OssDependencyResolver.ResolveWslCoreMsiAsync(
+            config,
+            _localTempDir,
+            new SetupLogger(filePath: null, LogLevel.Trace),
+            Architecture.X64,
+            CancellationToken.None);
+
+        Assert.True(resolution.Success, resolution.ErrorMessage);
+        Assert.Equal("oss-manifest", resolution.Source);
+        Assert.NotNull(resolution.LocalPath);
+        Assert.True(File.Exists(resolution.LocalPath));
+        Assert.EndsWith("wsl.x64.msi", resolution.LocalPath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PreflightWsl_FailsWhenOssWslCoreMissingAndFallbackDisabled()
+    {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "version": "test"
+        }
+        """);
+        var commands = new FakeCommandRunner(args =>
+            args is ["--version"]
+                ? new CommandResult(1, "", "WSL is not installed. Visit https://aka.ms/wslinstall", TimeSpan.Zero, TimedOut: false)
+                : Fail($"unexpected args: {string.Join(' ', args)}"));
+        var ctx = CreateContext(new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        }, commands);
+
+        var result = await new PreflightWslStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("wslCore.assets", result.Message);
+        Assert.Single(commands.Calls);
+    }
+
+    [Fact]
     public async Task CreateWslInstance_PartialCleanupAvoidsGlobalShutdownWhenUnregisterSucceeds()
     {
         var listCalls = 0;

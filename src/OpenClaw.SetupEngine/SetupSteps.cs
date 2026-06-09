@@ -526,19 +526,16 @@ public sealed class PreflightWslStep : SetupStep
 
     private static async Task<StepResult> InstallWslPlatformAsync(SetupContext ctx, CancellationToken ct)
     {
-        ctx.Logger.Warn("WSL platform appears to be missing; launching elevated WSL platform install");
+        ctx.Logger.Warn("WSL platform appears to be missing; resolving WSL platform installer");
+        var wslCoreResolution = await OssDependencyResolver.ResolveWslCoreMsiAsync(ctx.Config, ctx.LocalDataDir, ctx.Logger, ct);
+        if (!wslCoreResolution.Success)
+            return StepResult.Fail(wslCoreResolution.ErrorMessage!);
+
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = WslConstants.WslExePath,
-                UseShellExecute = true,
-                Verb = "runas",
-                CreateNoWindow = true,
-                WorkingDirectory = WslConstants.SafeWindowsWorkingDirectory
-            };
-            psi.ArgumentList.Add("--install");
-            psi.ArgumentList.Add("--no-distribution");
+            var psi = wslCoreResolution.LocalPath is { Length: > 0 } msiPath
+                ? BuildElevatedWslMsiInstallStartInfo(ctx, msiPath)
+                : BuildElevatedWslPlatformInstallStartInfo(ctx);
 
             using var process = Process.Start(psi);
             if (process == null)
@@ -546,7 +543,7 @@ public sealed class PreflightWslStep : SetupStep
 
             await process.WaitForExitAsync(ct);
 
-            if (process.ExitCode == 3010)
+            if (process.ExitCode is 3010 or 1641)
                 return StepResult.Terminal("WSL platform install requires a restart. Reboot Windows, then run setup again.");
 
             if (process.ExitCode != 0)
@@ -566,6 +563,48 @@ public sealed class PreflightWslStep : SetupStep
         {
             return StepResult.Fail($"WSL platform install failed: {ex.Message}", ex);
         }
+    }
+
+    private static ProcessStartInfo BuildElevatedWslMsiInstallStartInfo(SetupContext ctx, string msiPath)
+    {
+        ctx.Logger.Info($"Installing WSL platform from OSS MSI cache: {msiPath}");
+        var psi = new ProcessStartInfo
+        {
+            FileName = ResolveMsiexecPath(),
+            UseShellExecute = true,
+            Verb = "runas",
+            CreateNoWindow = true,
+            WorkingDirectory = WslConstants.SafeWindowsWorkingDirectory
+        };
+        psi.ArgumentList.Add("/i");
+        psi.ArgumentList.Add(msiPath);
+        psi.ArgumentList.Add("/qn");
+        psi.ArgumentList.Add("/norestart");
+        return psi;
+    }
+
+    private static ProcessStartInfo BuildElevatedWslPlatformInstallStartInfo(SetupContext ctx)
+    {
+        ctx.Logger.Warn("Launching elevated WSL platform install via wsl.exe official fallback");
+        var psi = new ProcessStartInfo
+        {
+            FileName = WslConstants.WslExePath,
+            UseShellExecute = true,
+            Verb = "runas",
+            CreateNoWindow = true,
+            WorkingDirectory = WslConstants.SafeWindowsWorkingDirectory
+        };
+        psi.ArgumentList.Add("--install");
+        psi.ArgumentList.Add("--no-distribution");
+        return psi;
+    }
+
+    private static string ResolveMsiexecPath()
+    {
+        var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        return string.IsNullOrWhiteSpace(systemDir)
+            ? "msiexec.exe"
+            : Path.Combine(systemDir, "msiexec.exe");
     }
 
     private static bool LooksUnavailable(CommandResult result)
