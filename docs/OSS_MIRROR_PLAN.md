@@ -8,6 +8,7 @@
 - 支持通过本地或 HTTPS manifest 解析 CLI 安装脚本 URL，并在 Windows 端先下载、校验 `sha256`/`size` 后再通过 WSL stdin 执行。
 - 支持从同一个 manifest 解析 Ubuntu 24.04 WSL rootfs，下载到本地缓存、校验 `sha256`/`size` 后通过 `wsl --import ... --version 2` 创建网关实例。
 - 支持从同一个 manifest 解析 Microsoft WSL x64/arm64 MSI。缺少 WSL 平台时先下载到本地缓存、校验 `sha256`/`size`，再通过提权 `msiexec /i ... /qn /norestart` 安装。
+- WSL Core MSI 安装后，如果 Windows 可选功能“适用于 Linux 的 Windows 子系统”或“虚拟机平台”仍未启用，预检会识别 `HCS_E_SERVICE_NOT_AVAILABLE`、`--install --no-distribution` 等提示，并通过本机 DISM 提权启用这些功能；该步骤不走国外下载，完成后要求重启再继续安装。
 - `Gateway.InstallUrl` 仍然优先级最高，便于临时调试和灰度。
 - 默认禁用官方回退：OSS manifest 不可用或校验失败时直接失败，避免安装流程悄悄回到国外 URL、`wsl.exe --install --no-distribution` 或 `wsl.exe --install --web-download`。只有显式设置 `AllowOfficialFallback=true` 才允许官方回退。
 - 长旺 OSS 测试构建默认禁用 GitHub 自更新检查，避免安装后跳到 GitHub Release 下载应用更新；如需临时测试官方更新，可设置 `OPENCLAW_ENABLE_GITHUB_UPDATES=1`。

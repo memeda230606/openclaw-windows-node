@@ -31,6 +31,7 @@ public class SetupStepsTests : IDisposable
     {
         OssDependencyResolver.AssetDownloaderOverride = null;
         OssDependencyResolver.AssetFileDownloaderOverride = null;
+        PreflightWslStep.EnableWslWindowsFeaturesOverride = null;
         Environment.SetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR", _prevDataDir);
         Environment.SetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR", _prevLocalDataDir);
         // slopwatch-ignore: SW003 Test cleanup or fixture teardown is best-effort and must not hide the test outcome.
@@ -440,6 +441,32 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateWslInstance_TranslatesHcsServiceNotAvailableInstallFailure()
+    {
+        var commands = new FakeCommandRunner(args =>
+        {
+            if (args.SequenceEqual(["--list", "--quiet"]))
+                return Ok("");
+            if (args.Contains("--install"))
+                return new CommandResult(
+                    -1,
+                    "",
+                    "Wsl/Service/RegisterDistro/CreateVm/HCS/HCS_E_SERVICE_NOT_AVAILABLE",
+                    TimeSpan.Zero,
+                    TimedOut: false);
+
+            return Fail($"unexpected args: {string.Join(' ', args)}");
+        });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new CreateWslInstanceStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("虚拟机平台", result.Message);
+        Assert.DoesNotContain("HCS_E_SERVICE_NOT_AVAILABLE", result.Message);
+    }
+
+    [Fact]
     public async Task ResolveWslCoreMsi_DownloadsArchitectureAssetFromOssManifest()
     {
         var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
@@ -808,9 +835,9 @@ public class SetupStepsTests : IDisposable
             + "and virtualization is turned on in your computer's firmware settings.",
             Architecture.X64,
             out var message));
-        Assert.Contains("BIOS", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BIOS/UEFI", message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("VT-x", message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("virtualization", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("硬件虚拟化", message);
     }
 
     [Fact]
@@ -824,7 +851,7 @@ public class SetupStepsTests : IDisposable
             out var message));
         Assert.Contains("ARM64", message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("UEFI", message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("virtualization", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("虚拟化", message);
         // Must not name x86-specific extensions on ARM64.
         Assert.DoesNotContain("VT-x", message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("AMD-V", message, StringComparison.OrdinalIgnoreCase);
@@ -842,8 +869,40 @@ public class SetupStepsTests : IDisposable
             + "Error: 0x80370102 The virtual machine could not be started because a "
             + "required feature is not installed.",
             out var message));
-        Assert.Contains("Virtual Machine Platform", message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("wsl --install --no-distribution", message);
+        Assert.Contains("虚拟机平台", message);
+        Assert.Contains("DISM", message);
+    }
+
+    [Fact]
+    public void WslInstallSupport_TryGetEnvironmentIssue_DetectsHcsServiceNotAvailableSymbol()
+    {
+        Assert.True(WslInstallSupport.TryGetEnvironmentIssue(
+            "Wsl/Service/RegisterDistro/CreateVm/HCS/HCS_E_SERVICE_NOT_AVAILABLE",
+            out var message));
+
+        Assert.Contains("虚拟机平台", message);
+        Assert.Contains("重启 Windows", message);
+    }
+
+    [Fact]
+    public void WslInstallSupport_TryGetEnvironmentIssue_DetectsNoDistributionInstallHint()
+    {
+        Assert.True(WslInstallSupport.TryGetEnvironmentIssue(
+            "请运行 wsl.exe --install --no-distribution 后重试。https://aka.ms/enablevirtualization",
+            out var message));
+
+        Assert.Contains("适用于 Linux 的 Windows 子系统", message);
+        Assert.Contains("DISM", message);
+    }
+
+    [Fact]
+    public void WslInstallSupport_TryGetEnvironmentIssue_DetectsNulSeparatedStatusHint()
+    {
+        var output = string.Join('\0', "wsl.exe --install --no-distribution".Select(c => c.ToString()));
+
+        Assert.True(WslInstallSupport.TryGetEnvironmentIssue(output, out var message));
+
+        Assert.Contains("虚拟机平台", message);
     }
 
     [Fact]
@@ -874,7 +933,7 @@ public class SetupStepsTests : IDisposable
         var result = await new PreflightWslStep().ExecuteAsync(ctx, CancellationToken.None);
 
         Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
-        Assert.Contains("virtualization", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("硬件虚拟化", result.Message);
         // Don't assert on "BIOS" / "UEFI" here -- the wording flexes by host
         // CPU architecture (this test runs on either x64 or Arm64 dev boxes).
     }
@@ -882,6 +941,7 @@ public class SetupStepsTests : IDisposable
     [Fact]
     public async Task PreflightWsl_FailsTerminalWhenWslEmitsHcsServiceNotAvailable()
     {
+        var featureEnableAttempted = false;
         var commands = new FakeCommandRunner(args =>
         {
             if (args is ["--version"])
@@ -894,12 +954,18 @@ public class SetupStepsTests : IDisposable
             return Ok();
         });
         var ctx = CreateContext(commands: commands);
+        PreflightWslStep.EnableWslWindowsFeaturesOverride = (_, message, _) =>
+        {
+            featureEnableAttempted = true;
+            Assert.Contains("虚拟机平台", message);
+            return Task.FromResult(StepResult.Terminal("已启用 WSL Windows 功能，请重启 Windows 后重试。"));
+        };
 
         var result = await new PreflightWslStep().ExecuteAsync(ctx, CancellationToken.None);
 
         Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
-        Assert.Contains("Virtual Machine Platform", result.Message);
-        Assert.Contains("wsl --install --no-distribution", result.Message);
+        Assert.True(featureEnableAttempted);
+        Assert.Contains("重启 Windows", result.Message);
     }
 
     [Fact]

@@ -37,6 +37,14 @@ internal static class WslConstants
 
 internal static class WslInstallSupport
 {
+    internal enum EnvironmentIssueKind
+    {
+        FirmwareVirtualizationDisabled,
+        WindowsFeaturesMissing
+    }
+
+    internal sealed record EnvironmentIssue(EnvironmentIssueKind Kind, string Message);
+
     private static readonly Version s_minDirectNamedInstallVersion = new(2, 4, 4);
     private static readonly System.Text.RegularExpressions.Regex s_wslProductTokenRegex = new(
         @"(?<![A-Za-z0-9])WSL(?![A-Za-z0-9])",
@@ -114,7 +122,41 @@ internal static class WslInstallSupport
     // and Arm64 wordings without depending on the host process arch.
     internal static bool TryGetEnvironmentIssue(string output, Architecture architecture, out string message)
     {
+        if (TryGetEnvironmentIssueDetails(output, architecture, out var issue))
+        {
+            message = issue.Message;
+            return true;
+        }
+
+        message = string.Empty;
+        return false;
+    }
+
+    internal static bool TryGetEnvironmentIssueDetails(string output, out EnvironmentIssue issue)
+        => TryGetEnvironmentIssueDetails(output, RuntimeInformation.OSArchitecture, out issue);
+
+    internal static bool TryGetEnvironmentIssueDetails(string output, Architecture architecture, out EnvironmentIssue issue)
+    {
         var text = Normalize(output);
+
+        // Required Windows feature missing (Virtual Machine Platform and/or
+        // WSL optional component). We match both stable HRESULT/symbol names
+        // and the command hint emitted by localized wsl.exe output. The
+        // latter is important because UTF-16LE output can be NUL-stripped but
+        // still retain ASCII command fragments such as
+        // `wsl.exe --install --no-distribution`.
+        if (Contains(text, "0x80370102")
+            || Contains(text, "HCS_E_SERVICE_NOT_AVAILABLE")
+            || Contains(text, "Wsl/Service/RegisterDistro/CreateVm/HCS")
+            || Contains(text, "required feature is not installed")
+            || Contains(text, "--install --no-distribution"))
+        {
+            issue = new EnvironmentIssue(
+                EnvironmentIssueKind.WindowsFeaturesMissing,
+                "WSL2 平台不可用：需要启用 Windows 可选功能“适用于 Linux 的 Windows 子系统”和“虚拟机平台”。"
+                + "安装器会使用本机 DISM 启用这些功能，不会从外网下载；完成后需要重启 Windows，再重新运行安装。");
+            return true;
+        }
 
         // Firmware virtualization off. wsl.exe emits this when the Windows
         // feature is installed but the CPU virtualization extension is
@@ -123,35 +165,21 @@ internal static class WslInstallSupport
         // architecture: VT-x/AMD-V/SVM are x86-specific terms that don't
         // exist on Arm64 (Surface Pro X / Pro 9 SQ3 / Pro 11), where the
         // extensions are ARMv8 EL2 and the UEFI label is generic.
-        if (Contains(text, "virtualization is not enabled"))
+        if (Contains(text, "virtualization is not enabled")
+            || Contains(text, "aka.ms/enablevirtualization")
+            || Contains(text, "enablevirtualization"))
         {
-            message = architecture == Architecture.Arm64
-                ? "WSL2 requires hardware virtualization, but it is disabled. "
-                    + "On ARM64 devices (e.g. Surface), enable virtualization in your device's UEFI "
-                    + "settings (look for 'Virtualization Support' or similar). On managed devices this "
-                    + "may be controlled by your organization's Intune / device-management policy. "
-                    + "Reboot, then retry setup."
-                : "WSL2 requires hardware virtualization, but it is disabled in firmware. "
-                    + "Enable VT-x/AMD-V (Intel VT or AMD SVM) in your computer's BIOS/UEFI settings, "
-                    + "reboot, then retry setup.";
+            issue = new EnvironmentIssue(
+                EnvironmentIssueKind.FirmwareVirtualizationDisabled,
+                architecture == Architecture.Arm64
+                    ? "WSL2 需要硬件虚拟化，但当前设备未启用。请在 ARM64 设备的 UEFI 设置中启用虚拟化支持；"
+                        + "如果是公司托管设备，可能需要管理员在 Intune/设备管理策略中放行。重启后再重新运行安装。"
+                    : "WSL2 需要硬件虚拟化，但当前 BIOS/UEFI 未启用。请启用 VT-x/AMD-V（Intel VT 或 AMD SVM），"
+                        + "重启后再重新运行安装。");
             return true;
         }
 
-        // Required Windows feature missing (Virtual Machine Platform and/or
-        // Hyper-V). 0x80370102 = HCS_E_SERVICE_NOT_AVAILABLE, emitted verbatim
-        // by wsl.exe as "The virtual machine could not be started because a
-        // required feature is not installed." The same remediation
-        // (`wsl --install --no-distribution`) addresses both features.
-        if (Contains(text, "0x80370102"))
-        {
-            message = "WSL2 needs the Windows 'Virtual Machine Platform' / Hyper-V platform "
-                + "support, which is not currently enabled. Run `wsl --install --no-distribution` "
-                + "from an elevated PowerShell (or enable 'Virtual Machine Platform' under 'Turn "
-                + "Windows features on or off'), reboot, then retry setup.";
-            return true;
-        }
-
-        message = string.Empty;
+        issue = new EnvironmentIssue(EnvironmentIssueKind.WindowsFeaturesMissing, string.Empty);
         return false;
 
         static bool Contains(string haystack, string needle)
@@ -460,6 +488,8 @@ public sealed class PreflightOsStep : SetupStep
 
 public sealed class PreflightWslStep : SetupStep
 {
+    internal static Func<SetupContext, string, CancellationToken, Task<StepResult>>? EnableWslWindowsFeaturesOverride { get; set; }
+
     public override string Id => "preflight-wsl";
     public override string DisplayName => "Verify WSL available";
     public override bool CanRetry => false;
@@ -501,12 +531,12 @@ public sealed class PreflightWslStep : SetupStep
         // before pipeline reaches the actual `wsl --install` step.
         var statusIssue = await DetectEnvironmentIssueAsync(ctx, ct);
         if (statusIssue != null)
-            return StepResult.Terminal(statusIssue);
+            return await ResolveEnvironmentIssueAsync(ctx, statusIssue, ct);
 
         return StepResult.Ok("WSL available");
     }
 
-    internal static async Task<string?> DetectEnvironmentIssueAsync(SetupContext ctx, CancellationToken ct)
+    internal static async Task<WslInstallSupport.EnvironmentIssue?> DetectEnvironmentIssueAsync(SetupContext ctx, CancellationToken ct)
     {
         var status = await ctx.Commands.RunAsync(
             WslConstants.WslExePath,
@@ -515,13 +545,92 @@ public sealed class PreflightWslStep : SetupStep
             ct: ct);
 
         var combined = $"{status.Stdout}\n{status.Stderr}";
-        if (WslInstallSupport.TryGetEnvironmentIssue(combined, out var message))
+        if (WslInstallSupport.TryGetEnvironmentIssueDetails(combined, out var issue))
         {
             ctx.Logger.Warn($"WSL environment issue detected: {NormalizeWslOutput(combined).Trim()}");
-            return message;
+            return issue;
         }
 
         return null;
+    }
+
+    private static async Task<StepResult> ResolveEnvironmentIssueAsync(
+        SetupContext ctx,
+        WslInstallSupport.EnvironmentIssue issue,
+        CancellationToken ct)
+    {
+        if (issue.Kind != WslInstallSupport.EnvironmentIssueKind.WindowsFeaturesMissing)
+            return StepResult.Terminal(issue.Message);
+
+        return await EnableWslWindowsFeaturesAsync(ctx, issue.Message, ct);
+    }
+
+    private static async Task<StepResult> EnableWslWindowsFeaturesAsync(SetupContext ctx, string detectedIssueMessage, CancellationToken ct)
+    {
+        if (EnableWslWindowsFeaturesOverride != null)
+            return await EnableWslWindowsFeaturesOverride(ctx, detectedIssueMessage, ct);
+
+        ctx.Logger.Warn($"WSL Windows features appear disabled: {detectedIssueMessage}");
+
+        var scriptPath = WriteEnableWslFeaturesScript(ctx);
+        var logPath = scriptPath + ".log";
+        var psi = BuildElevatedWslFeatureEnableStartInfo(ctx, scriptPath);
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process == null)
+                return StepResult.Fail("无法启动 WSL Windows 功能启用程序。");
+
+            await process.WaitForExitAsync(ct);
+
+            if (process.ExitCode is 0 or 3010 or 1641)
+            {
+                return StepResult.Terminal(
+                    "已通过本机 DISM 启用 WSL 所需 Windows 功能（适用于 Linux 的 Windows 子系统、虚拟机平台）。"
+                    + "请重启 Windows，然后重新运行 OpenClaw 安装。");
+            }
+
+            return StepResult.Fail(
+                $"启用 WSL Windows 功能失败（exit {process.ExitCode}）。请查看日志：{logPath}");
+        }
+        catch (System.ComponentModel.Win32Exception ex) when ((uint)ex.NativeErrorCode == 1223)
+        {
+            return StepResult.Fail("启用 WSL Windows 功能的管理员授权已取消。请重新运行安装并同意 UAC 授权。");
+        }
+        catch (Exception ex)
+        {
+            return StepResult.Fail($"启用 WSL Windows 功能失败：{ex.Message}", ex);
+        }
+    }
+
+    private static string WriteEnableWslFeaturesScript(SetupContext ctx)
+    {
+        var scriptsDir = Path.Combine(ctx.LocalDataDir, "setup-scripts");
+        Directory.CreateDirectory(scriptsDir);
+        var scriptPath = Path.Combine(scriptsDir, "Enable-WslFeatures.cmd");
+        var logPath = scriptPath + ".log";
+        var dismPath = ResolveDismPath();
+        var script = $"""
+@echo off
+setlocal
+set "LOG={logPath}"
+echo [%DATE% %TIME%] Enabling Windows features required by OpenClaw WSL setup > "%LOG%"
+"{dismPath}" /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart >> "%LOG%" 2>&1
+set "EXIT1=%ERRORLEVEL%"
+"{dismPath}" /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart >> "%LOG%" 2>&1
+set "EXIT2=%ERRORLEVEL%"
+echo [%DATE% %TIME%] DISM exit codes: WSL=%EXIT1% VMP=%EXIT2% >> "%LOG%"
+if "%EXIT1%"=="3010" set "EXIT1=0"
+if "%EXIT1%"=="1641" set "EXIT1=0"
+if "%EXIT2%"=="3010" set "EXIT2=0"
+if "%EXIT2%"=="1641" set "EXIT2=0"
+if not "%EXIT1%"=="0" exit /b %EXIT1%
+if not "%EXIT2%"=="0" exit /b %EXIT2%
+exit /b 3010
+""";
+        File.WriteAllText(scriptPath, script);
+        return scriptPath;
     }
 
     private static async Task<StepResult> InstallWslPlatformAsync(SetupContext ctx, CancellationToken ct)
@@ -599,12 +708,45 @@ public sealed class PreflightWslStep : SetupStep
         return psi;
     }
 
+    private static ProcessStartInfo BuildElevatedWslFeatureEnableStartInfo(SetupContext ctx, string scriptPath)
+    {
+        ctx.Logger.Warn($"Launching elevated local DISM feature enable script: {scriptPath}");
+        var psi = new ProcessStartInfo
+        {
+            FileName = ResolveCmdPath(),
+            UseShellExecute = true,
+            Verb = "runas",
+            CreateNoWindow = true,
+            WorkingDirectory = WslConstants.SafeWindowsWorkingDirectory
+        };
+        psi.ArgumentList.Add("/d");
+        psi.ArgumentList.Add("/c");
+        psi.ArgumentList.Add(scriptPath);
+        return psi;
+    }
+
     private static string ResolveMsiexecPath()
     {
         var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
         return string.IsNullOrWhiteSpace(systemDir)
             ? "msiexec.exe"
             : Path.Combine(systemDir, "msiexec.exe");
+    }
+
+    private static string ResolveDismPath()
+    {
+        var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        return string.IsNullOrWhiteSpace(systemDir)
+            ? "dism.exe"
+            : Path.Combine(systemDir, "dism.exe");
+    }
+
+    private static string ResolveCmdPath()
+    {
+        var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        return string.IsNullOrWhiteSpace(systemDir)
+            ? "cmd.exe"
+            : Path.Combine(systemDir, "cmd.exe");
     }
 
     private static bool LooksUnavailable(CommandResult result)
@@ -741,8 +883,15 @@ public sealed class CreateWslInstanceStep : SetupStep
         if (install.ExitCode != 0)
         {
             var cleanupError = await CleanupPartialInstall(ctx, distro, installPath, ct);
+            var installOutput = FirstNonEmpty(install.Stderr, install.Stdout);
+            if (WslInstallSupport.TryGetEnvironmentIssue(installOutput, out var environmentMessage))
+            {
+                return StepResult.Fail(
+                    $"Fresh WSL install failed for '{distro}' from '{baseDistro}' (exit {install.ExitCode}): {environmentMessage}{cleanupError}");
+            }
+
             return StepResult.Fail(
-                $"Fresh WSL install failed for '{distro}' from '{baseDistro}' (exit {install.ExitCode}): {FirstNonEmpty(install.Stderr, install.Stdout)}{cleanupError}");
+                $"Fresh WSL install failed for '{distro}' from '{baseDistro}' (exit {install.ExitCode}): {installOutput}{cleanupError}");
         }
 
         var verify = await VerifyFreshDistro(ctx, distro, installPath, ct);
@@ -789,7 +938,7 @@ public sealed class CreateWslInstanceStep : SetupStep
         {
             var environmentIssue = await PreflightWslStep.DetectEnvironmentIssueAsync(ctx, ct);
             var baseMessage = $"Fresh WSL install did not register expected distro '{distro}'.";
-            return StepResult.Fail(environmentIssue != null ? $"{baseMessage} {environmentIssue}" : baseMessage);
+            return StepResult.Fail(environmentIssue != null ? $"{baseMessage} {environmentIssue.Message}" : baseMessage);
         }
 
         var verbose = await ctx.Commands.RunAsync(WslConstants.WslExePath, ["--list", "--verbose"], TimeSpan.FromSeconds(15), ct: ct);
