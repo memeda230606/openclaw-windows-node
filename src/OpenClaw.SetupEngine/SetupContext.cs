@@ -28,6 +28,7 @@ public sealed class SetupConfig
     // Nested config sections — everything is configurable
     public WslConfig Wsl { get; set; } = new();
     public GatewayConfig Gateway { get; set; } = new();
+    public OssMirrorConfig Oss { get; set; } = new();
     public CapabilitiesConfig Capabilities { get; set; } = new();
     public TraySettingsConfig Settings { get; set; } = new();
     public PairingConfig Pairing { get; set; } = new();
@@ -52,8 +53,43 @@ public sealed class SetupConfig
             config.Headless = true;
         if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LOG_PATH") is { Length: > 0 } logPath)
             config.LogPath = logPath;
+        if (TryGetEnvironmentBool("OPENCLAW_SETUP_OSS_ENABLED", out var ossEnabled))
+            config.Oss.Enabled = ossEnabled;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_URL") is { Length: > 0 } manifestUrl)
+            config.Oss.ManifestUrl = manifestUrl;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_PATH") is { Length: > 0 } manifestPath)
+            config.Oss.ManifestPath = manifestPath;
+        if (TryGetEnvironmentBool("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK", out var allowFallback))
+            config.Oss.AllowOfficialFallback = allowFallback;
 
         return config;
+    }
+
+    private static bool TryGetEnvironmentBool(string name, out bool value)
+    {
+        value = false;
+
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        switch (raw.Trim().ToLowerInvariant())
+        {
+            case "1":
+            case "true":
+            case "yes":
+            case "on":
+                value = true;
+                return true;
+            case "0":
+            case "false":
+            case "no":
+            case "off":
+                value = false;
+                return true;
+            default:
+                return false;
+        }
     }
 
     public SetupConfig ApplyUiDefaults(bool rollbackOnFailure = true)
@@ -114,6 +150,16 @@ public sealed class GatewayConfig
     public string ReloadMode { get; set; } = "hot";
     public string AuthMode { get; set; } = "token";
     public Dictionary<string, string>? ExtraConfig { get; set; }
+}
+
+// ─── OSS Mirror Configuration ───
+
+public sealed class OssMirrorConfig
+{
+    public bool Enabled { get; set; }
+    public string? ManifestUrl { get; set; }
+    public string? ManifestPath { get; set; }
+    public bool AllowOfficialFallback { get; set; } = true;
 }
 
 // ─── Capabilities Configuration ───

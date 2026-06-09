@@ -11,12 +11,12 @@
         <StackPanel Grid.Row="0" Spacing="6" HorizontalAlignment="Center">
             <Image Source="ms-appx:///OpenClaw.SetupEngine.UI/Assets/Setup/Lobster.png" Width="64" Height="64"
                    HorizontalAlignment="Center" Margin="0,0,0,8" />
-            <TextBlock Text="Configure capabilities"
+            <TextBlock Text="配置能力"
                        FontSize="24" FontWeight="SemiBold"
                        HorizontalAlignment="Center" />
             <TextBlock TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="13" Opacity="0.6" MaxWidth="440"
-                       Text="Choose which capabilities this node will advertise. You can change these later." />
+                       Text="选择此节点要向网关声明的能力。之后仍可修改。" />
         </StackPanel>
 
         <!-- 2-column capability grid -->
@@ -32,7 +32,7 @@
         </ScrollViewer>
 
         <!-- Continue button -->
-        <Button Grid.Row="2" Content="Continue"
+        <Button Grid.Row="2" Content="继续"
                 HorizontalAlignment="Stretch" Margin="0,16,0,0"
                 Height="44" FontSize="15" FontWeight="SemiBold"
                 Click="Continue_Click">

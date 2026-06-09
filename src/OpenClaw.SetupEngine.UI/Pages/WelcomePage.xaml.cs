@@ -34,8 +34,8 @@ public sealed partial class WelcomePage : Page
             ? Color.FromArgb(255, 0x2C, 0x2C, 0x2C)
             : Color.FromArgb(255, 0xF0, 0xF0, 0xF0));
 
-        InfoText.Text = "This local setup installs a small WSL Linux instance dedicated to OpenClaw. "
-                      + "If you'd rather connect to an existing or remote gateway, choose Advanced setup.";
+        InfoText.Text = "本地安装会创建一个专用于 OpenClaw 的小型 WSL Linux 实例。"
+                      + "如果你想连接已有或远程网关，请选择高级设置。";
 
         StartLobsterBreatheAnimation();
     }
@@ -75,11 +75,11 @@ public sealed partial class WelcomePage : Page
         var dialog = new ContentDialog
         {
             Title = existing.HasLocalGateway || existing.HasDistro
-                ? "Replace existing WSL gateway?"
-                : "Install a new WSL gateway?",
+                ? "替换现有 WSL 网关？"
+                : "安装新的 WSL 网关？",
             Content = summary,
-            PrimaryButtonText = "Continue",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = "继续",
+            CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot,
         };

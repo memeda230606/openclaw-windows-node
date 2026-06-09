@@ -25,16 +25,16 @@ public sealed partial class ProgressPage : Page
     // Map pipeline step IDs to display groups (N:1)
     private static readonly (string GroupId, string DisplayName, string[] StepIds)[] StepGroups =
     [
-        ("preflight", "Check system", ["preflight-os", "preflight-wsl"]),
-        ("cleanup", "Removing existing gateway", ["cleanup-distro", "cleanup-gateway"]),
-        ("port", "Checking gateway port", ["preflight-port"]),
-        ("wsl-create", "Installing clean WSL gateway", ["wsl-create"]),
-        ("wsl-configure", "Configuring instance", ["wsl-configure", "validate-wsl-lockdown"]),
-        ("install-cli", "Installing OpenClaw", ["install-cli"]),
-        ("configure", "Preparing gateway", ["configure-gateway", "install-service"]),
-        ("start", "Starting gateway", ["start-gateway", "mint-token"]),
-        ("pairing", "Pairing device", ["pair-operator", "pair-node", "verify-e2e"]),
-        ("finish", "Finishing setup", ["run-wizard", "start-keepalive"]),
+        ("preflight", "检查系统", ["preflight-os", "preflight-wsl"]),
+        ("cleanup", "移除现有网关", ["cleanup-distro", "cleanup-gateway"]),
+        ("port", "检查网关端口", ["preflight-port"]),
+        ("wsl-create", "安装全新的 WSL 网关", ["wsl-create"]),
+        ("wsl-configure", "配置实例", ["wsl-configure", "validate-wsl-lockdown"]),
+        ("install-cli", "安装 OpenClaw", ["install-cli"]),
+        ("configure", "准备网关", ["configure-gateway", "install-service"]),
+        ("start", "启动网关", ["start-gateway", "mint-token"]),
+        ("pairing", "配对设备", ["pair-operator", "pair-node", "verify-e2e"]),
+        ("finish", "完成安装", ["run-wizard", "start-keepalive"]),
     ];
 
     public ProgressPage()
@@ -46,7 +46,7 @@ public sealed partial class ProgressPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         _config = e.Parameter as SetupConfig ?? new SetupConfig();
-        SubtitleText.Text = $"Creating {_config.DistroName} WSL instance";
+        SubtitleText.Text = $"正在创建 {_config.DistroName} WSL 实例";
 
         BuildStepRows();
         StartPipeline();
@@ -109,7 +109,7 @@ public sealed partial class ProgressPage : Page
                 {
                     if (_rows.TryGetValue("finish", out var finishRow))
                         finishRow.SetStatus(StepStatus.Running);
-                    SubtitleText.Text = "Opening gateway setup...";
+                    SubtitleText.Text = "正在打开网关设置...";
                     await Task.Delay(900);
                     finishRow?.SetStatus(StepStatus.Done);
                     SetupWindow.Active?.NavigateToWizard();
@@ -122,9 +122,9 @@ public sealed partial class ProgressPage : Page
             else
             {
                 var errorMsg = result.Outcome == PipelineOutcome.Cancelled
-                    ? "Setup was cancelled."
+                    ? "安装已取消。"
                     : result.FailedStepId != null
-                        ? $"Step '{result.FailedStepId}' failed: {result.Message}"
+                        ? $"步骤“{result.FailedStepId}”失败：{result.Message}"
                         : result.Message;
                 SetupWindow.Active?.NavigateToComplete(false, sw.Elapsed, config.LogPath, errorMsg);
             }
@@ -133,14 +133,14 @@ public sealed partial class ProgressPage : Page
         {
             sw.Stop();
             _pipelineFinished = true;
-            SetupWindow.Active?.NavigateToComplete(false, sw.Elapsed, config.LogPath, "Setup was cancelled.");
+            SetupWindow.Active?.NavigateToComplete(false, sw.Elapsed, config.LogPath, "安装已取消。");
         }
         catch (Exception ex)
         {
             sw.Stop();
             _pipelineFinished = true;
             _logger?.Error($"Setup UI pipeline failed: {ex.Message}");
-            SetupWindow.Active?.NavigateToComplete(false, sw.Elapsed, config.LogPath, $"Setup crashed: {ex.Message}");
+            SetupWindow.Active?.NavigateToComplete(false, sw.Elapsed, config.LogPath, $"安装进程异常：{ex.Message}");
         }
         finally
         {
@@ -234,7 +234,7 @@ public sealed partial class ProgressPage : Page
         _logExpanded = !_logExpanded;
         LogPanel.Visibility = _logExpanded ? Visibility.Visible : Visibility.Collapsed;
         OpenLogButton.Visibility = _logExpanded ? Visibility.Visible : Visibility.Collapsed;
-        LogToggleButton.Content = _logExpanded ? "Hide logs ▼" : "Show logs ▲";
+        LogToggleButton.Content = _logExpanded ? "隐藏日志 ▼" : "显示日志 ▲";
 
         var isDark = ActualTheme == ElementTheme.Dark;
         LogPanel.Background = new SolidColorBrush(isDark

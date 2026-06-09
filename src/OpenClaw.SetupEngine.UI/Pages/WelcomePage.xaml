@@ -13,13 +13,13 @@
                    Source="ms-appx:///OpenClaw.SetupEngine.UI/Assets/Setup/Lobster.png"
                    Width="170" Height="170"
                    HorizontalAlignment="Center" />
-            <TextBlock Text="Get started with OpenClaw"
+            <TextBlock Text="开始使用 OpenClaw"
                        FontSize="28" FontWeight="SemiBold"
                        HorizontalAlignment="Center" />
             <TextBlock TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="14" Opacity="0.7" MaxWidth="440"
                        HorizontalAlignment="Center"
-                       Text="OpenClaw lets agents run commands, read and write files, and capture screenshots on this PC. Only set it up on a computer you trust." />
+                       Text="OpenClaw 可让智能体在这台电脑上执行命令、读写文件并截取屏幕。请只在你信任的电脑上安装。" />
         </StackPanel>
 
         <!-- Bottom: Info card + Button + Link (pushed to bottom) -->
@@ -41,7 +41,7 @@
 
             <!-- Start button -->
             <Button x:Name="StartButton"
-                    Content="Install new WSL Gateway"
+                    Content="安装新的 WSL 网关"
                     HorizontalAlignment="Stretch"
                     Height="44" FontSize="15" FontWeight="SemiBold"
                     Click="StartButton_Click">
@@ -56,7 +56,7 @@
             </Button>
 
             <!-- Advanced setup link -->
-            <HyperlinkButton Content="Advanced setup"
+            <HyperlinkButton Content="高级设置"
                              HorizontalAlignment="Center"
                              Foreground="#60C8F8" FontSize="14"
                              Click="AdvancedSetup_Click" />

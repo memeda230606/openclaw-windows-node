@@ -8,8 +8,8 @@
     <Grid RowDefinitions="Auto,*,Auto" Padding="48,32,48,32">
         <StackPanel Grid.Row="0" Spacing="6" HorizontalAlignment="Center">
             <TextBlock Text="🦞" FontSize="42" HorizontalAlignment="Center" />
-            <TextBlock Text="Gateway setup" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Center" />
-            <TextBlock x:Name="StatusText" Text="Connecting to gateway..." FontSize="13" Opacity="0.65" HorizontalAlignment="Center" />
+            <TextBlock Text="网关设置" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Center" />
+            <TextBlock x:Name="StatusText" Text="正在连接网关..." FontSize="13" Opacity="0.65" HorizontalAlignment="Center" />
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" Margin="0,28,0,20" VerticalScrollBarVisibility="Auto">
@@ -30,7 +30,7 @@
                             BorderThickness="1"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
                         <StackPanel Spacing="6">
-                            <TextBlock Text="Live gateway output"
+                            <TextBlock Text="实时网关输出"
                                        FontSize="11"
                                        FontWeight="SemiBold"
                                        Opacity="0.7"
@@ -40,8 +40,8 @@
                     </Border>
                     <StackPanel x:Name="SelectOptions" Visibility="Collapsed" Spacing="8" />
                     <StackPanel x:Name="MultiOptions" Visibility="Collapsed" Spacing="8" />
-                    <TextBox x:Name="TextInput" Visibility="Collapsed" PlaceholderText="Enter value" />
-                    <PasswordBox x:Name="SecretInput" Visibility="Collapsed" PlaceholderText="Enter value" />
+                    <TextBox x:Name="TextInput" Visibility="Collapsed" PlaceholderText="请输入内容" />
+                    <PasswordBox x:Name="SecretInput" Visibility="Collapsed" PlaceholderText="请输入内容" />
                     <TextBlock x:Name="ErrorText" Visibility="Collapsed" Foreground="#FF6B6B" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
@@ -55,12 +55,12 @@
                         Spacing="12"
                         Visibility="Collapsed">
                 <Button x:Name="StartOverButton"
-                        Content="Start over"
+                        Content="重新开始"
                         Height="44"
                         MinWidth="104"
                         Click="StartOver_Click" />
                 <Button x:Name="SkipWizardButton"
-                        Content="Skip wizard"
+                        Content="跳过向导"
                         Height="44"
                         MinWidth="104"
                         Click="SkipWizard_Click" />
@@ -69,10 +69,10 @@
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         Spacing="12">
-                <Button x:Name="SecondaryButton" Content="Skip" Height="44"
+                <Button x:Name="SecondaryButton" Content="跳过" Height="44"
                         MinWidth="96"
                         Click="Secondary_Click" IsEnabled="False" />
-                <Button x:Name="PrimaryButton" Content="Continue" Height="44"
+                <Button x:Name="PrimaryButton" Content="继续" Height="44"
                         MinWidth="120"
                         Click="Primary_Click" IsEnabled="False">
                     <Button.Resources>

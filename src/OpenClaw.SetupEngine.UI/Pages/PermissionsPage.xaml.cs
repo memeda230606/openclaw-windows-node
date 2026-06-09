@@ -19,11 +19,11 @@ public sealed partial class PermissionsPage : Page
 
     private static readonly PermDef[] Permissions =
     [
-        new("Notifications", "\uEA8F", "ms-settings:notifications", CheckNotificationsAsync),
-        new("Camera", "\uE722", "ms-settings:privacy-webcam", CheckCameraAsync),
-        new("Microphone", "\uE720", "ms-settings:privacy-microphone", CheckMicrophoneAsync),
-        new("Location (optional)", "\uE81D", "ms-settings:privacy-location", CheckLocationAsync),
-        new("Screen Capture", "\uE7F4", "", CheckScreenCaptureAsync),
+        new("通知", "\uEA8F", "ms-settings:notifications", CheckNotificationsAsync),
+        new("摄像头", "\uE722", "ms-settings:privacy-webcam", CheckCameraAsync),
+        new("麦克风", "\uE720", "ms-settings:privacy-microphone", CheckMicrophoneAsync),
+        new("位置（可选）", "\uE81D", "ms-settings:privacy-location", CheckLocationAsync),
+        new("屏幕捕获", "\uE7F4", "", CheckScreenCaptureAsync),
     ];
 
     public PermissionsPage()
@@ -100,7 +100,7 @@ public sealed partial class PermissionsPage : Page
                 Text = "\uE8A7", FontFamily = new FontFamily("Segoe Fluent Icons"),
                 FontSize = 14, VerticalAlignment = VerticalAlignment.Center
             });
-            btnContent.Children.Add(new TextBlock { Text = "Open Settings", FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+            btnContent.Children.Add(new TextBlock { Text = "打开设置", FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
             btn.Content = btnContent;
             var uri = perm.SettingsUri;
             btn.Click += async (_, _) =>
@@ -159,12 +159,12 @@ public sealed partial class PermissionsPage : Page
             using var key = Registry.CurrentUser.OpenSubKey(
                 @"Software\Microsoft\Windows\CurrentVersion\PushNotifications");
             if (key?.GetValue("ToastEnabled") is int val && val == 0)
-                return Task.FromResult(("Disabled", false));
-            return Task.FromResult(("Enabled", true));
+                return Task.FromResult(("已禁用", false));
+            return Task.FromResult(("已启用", true));
         }
         catch
         {
-            return Task.FromResult(("Unable to check", false));
+            return Task.FromResult(("无法检查", false));
         }
     }
 
@@ -173,13 +173,13 @@ public sealed partial class PermissionsPage : Page
         try
         {
             var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-            if (devices.Count == 0) return ("No camera detected", false);
+            if (devices.Count == 0) return ("未检测到摄像头", false);
             var access = DeviceAccessInformation.CreateFromDeviceClass(DeviceClass.VideoCapture);
             return access.CurrentStatus == DeviceAccessStatus.Allowed
-                ? ("Allowed", true)
-                : ("Denied — open Settings to allow", false);
+                ? ("已允许", true)
+                : ("已拒绝，请打开设置允许", false);
         }
-        catch { return ("Unable to check", false); }
+        catch { return ("无法检查", false); }
     }
 
     private static async Task<(string, bool)> CheckMicrophoneAsync()
@@ -187,13 +187,13 @@ public sealed partial class PermissionsPage : Page
         try
         {
             var devices = await DeviceInformation.FindAllAsync(DeviceClass.AudioCapture);
-            if (devices.Count == 0) return ("No microphone detected", false);
+            if (devices.Count == 0) return ("未检测到麦克风", false);
             var access = DeviceAccessInformation.CreateFromDeviceClass(DeviceClass.AudioCapture);
             return access.CurrentStatus == DeviceAccessStatus.Allowed
-                ? ("Allowed", true)
-                : ("Denied — open Settings to allow", false);
+                ? ("已允许", true)
+                : ("已拒绝，请打开设置允许", false);
         }
-        catch { return ("Unable to check", false); }
+        catch { return ("无法检查", false); }
     }
 
     private static Task<(string, bool)> CheckLocationAsync()
@@ -203,17 +203,17 @@ public sealed partial class PermissionsPage : Page
             using var sysKey = Registry.LocalMachine.OpenSubKey(
                 @"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location");
             if (sysKey?.GetValue("Value") is string sv && sv.Equals("Deny", StringComparison.OrdinalIgnoreCase))
-                return Task.FromResult(("Location services disabled", false));
+                return Task.FromResult(("位置服务已禁用", false));
 
             using var userKey = Registry.CurrentUser.OpenSubKey(
                 @"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location");
             var uv = userKey?.GetValue("Value") as string;
             if (uv != null && uv.Equals("Deny", StringComparison.OrdinalIgnoreCase))
-                return Task.FromResult(("Disabled for this user", false));
+                return Task.FromResult(("此用户已禁用", false));
 
-            return Task.FromResult(("Location services enabled", true));
+            return Task.FromResult(("位置服务已启用", true));
         }
-        catch { return Task.FromResult(("Unable to check", false)); }
+        catch { return Task.FromResult(("无法检查", false)); }
     }
 
     private static Task<(string, bool)> CheckScreenCaptureAsync()
@@ -221,9 +221,9 @@ public sealed partial class PermissionsPage : Page
         try
         {
             return Task.FromResult(GraphicsCaptureSession.IsSupported()
-                ? ("Available — uses picker per capture", true)
-                : ("Not supported on this device", false));
+                ? ("可用，每次捕获时会显示选择器", true)
+                : ("此设备不支持", false));
         }
-        catch { return Task.FromResult(("Unable to check", false)); }
+        catch { return Task.FromResult(("无法检查", false)); }
     }
 }

@@ -61,10 +61,10 @@ public sealed partial class WizardPage : Page
             _sessionId = "";
             _wizardStepCount = 0;
             _stepVisits.Clear();
-            SetBusy("Connecting to gateway...");
+            SetBusy("正在连接网关...");
             _client = await ConnectClientAsync();
             _client.StatusChanged += OnWizardClientStatusChanged;
-            SetBusy("Starting wizard...");
+            SetBusy("正在启动向导...");
             StartConsoleTail();
             var payload = await _client.SendWizardRequestAsync("wizard.start", timeoutMs: 30_000);
             if (generation != _operationGeneration)
@@ -77,7 +77,7 @@ public sealed partial class WizardPage : Page
             if (generation != _operationGeneration)
                 return;
 
-            await EnterWizardErrorAsync($"Gateway wizard failed: {ex.Message}");
+            await EnterWizardErrorAsync($"网关向导失败：{ex.Message}");
         }
     }
 
@@ -88,12 +88,12 @@ public sealed partial class WizardPage : Page
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenClawTray");
         var registry = new GatewayRegistry(dataDir);
         registry.Load();
-        var record = registry.GetActive() ?? throw new InvalidOperationException("No active gateway record found.");
+        var record = registry.GetActive() ?? throw new InvalidOperationException("未找到活动网关记录。");
         var identityPath = registry.GetIdentityDirectory(record.Id);
         var token = DeviceIdentity.TryReadStoredDeviceToken(identityPath)
             ?? record.SharedGatewayToken
             ?? record.BootstrapToken
-            ?? throw new InvalidOperationException("No gateway credential found.");
+            ?? throw new InvalidOperationException("未找到网关凭据。");
 
         var client = new OpenClawGatewayClient(config.EffectiveGatewayUrl, token, logger: NullLogger.Instance, identityPath: identityPath)
         {
@@ -104,7 +104,7 @@ public sealed partial class WizardPage : Page
         if (!outcome)
         {
             client.Dispose();
-            throw new InvalidOperationException("Could not connect to the gateway.");
+            throw new InvalidOperationException("无法连接到网关。");
         }
 
         return client;
@@ -151,7 +151,7 @@ public sealed partial class WizardPage : Page
                 return;
             }
 
-            _ = EnterWizardErrorAsync("Gateway connection was lost while the wizard was running.");
+            _ = EnterWizardErrorAsync("网关向导运行期间连接已断开。");
         });
     }
 
@@ -179,7 +179,7 @@ public sealed partial class WizardPage : Page
 
         if (!payload.TryGetProperty("step", out var step))
         {
-            ShowError("Gateway wizard returned an invalid response.");
+            ShowError("网关向导返回了无效响应。");
             return;
         }
 
@@ -193,14 +193,14 @@ public sealed partial class WizardPage : Page
 
         if (string.IsNullOrWhiteSpace(_stepId))
         {
-            ShowError("Gateway wizard step is missing an id.");
+            ShowError("网关向导步骤缺少 ID。");
             return;
         }
 
         _wizardStepCount++;
         if (_wizardStepCount > MaxWizardSteps)
         {
-            ShowError($"Gateway wizard exceeded {MaxWizardSteps} steps.");
+            ShowError($"网关向导超过 {MaxWizardSteps} 个步骤。");
             return;
         }
 
@@ -209,7 +209,7 @@ public sealed partial class WizardPage : Page
         _stepVisits[visitKey] = visits + 1;
         if (_stepVisits[visitKey] > MaxSameStepVisits)
         {
-            ShowError($"Gateway wizard repeated step '{_stepId}' too many times.");
+            ShowError($"网关向导步骤“{_stepId}”重复次数过多。");
             return;
         }
 
@@ -221,11 +221,11 @@ public sealed partial class WizardPage : Page
         BusyRing.Visibility = Visibility.Collapsed;
         BusyRing.IsActive = false;
         ShowRecoveryActions();
-        StatusText.Text = "Answer the gateway setup question";
+        StatusText.Text = "请回答网关设置问题";
         PrimaryButton.IsEnabled = !WizardSelection.RequiresAnswer(_stepType);
         SecondaryButton.IsEnabled = true;
-        PrimaryButton.Content = _stepType == "confirm" ? "Yes" : "Continue";
-        SecondaryButton.Content = "No";
+        PrimaryButton.Content = _stepType == "confirm" ? "是" : "继续";
+        SecondaryButton.Content = "否";
         SecondaryButton.Visibility = _stepType == "confirm" ? Visibility.Visible : Visibility.Collapsed;
 
         if (!BuildOptions(step, initial))
@@ -279,7 +279,7 @@ public sealed partial class WizardPage : Page
 
         if (!WizardSelection.HasSelectableOptions(_stepType, _options.Select(o => o.Value).ToArray()))
         {
-            ShowError("Gateway wizard returned a choice step without any selectable options.");
+            ShowError("网关向导返回了没有可选项的选择步骤。");
             return false;
         }
 
@@ -422,7 +422,7 @@ public sealed partial class WizardPage : Page
     {
         AdvanceOperationGeneration();
         HideRecoveryActions();
-        SetBusy("Starting over...");
+        SetBusy("正在重新开始...");
         await CancelCurrentSessionAsync();
         await StartWizardAsync();
     }
@@ -444,16 +444,16 @@ public sealed partial class WizardPage : Page
             if (!skip && !TryBuildAnswerValue(out answerValue))
             {
                 ErrorText.Text = _stepType == "multiselect"
-                    ? "Choose at least one valid option."
+                    ? "请至少选择一个有效选项。"
                     : _stepType == "text"
-                    ? "Enter a value to continue."
-                    : "Choose a valid option.";
+                    ? "请输入内容后继续。"
+                    : "请选择一个有效选项。";
                 ErrorText.Visibility = Visibility.Visible;
                 UpdateContinueState();
                 return;
             }
 
-            SetBusy(skip ? "Skipping..." : "Submitting...");
+            SetBusy(skip ? "正在跳过..." : "正在提交...");
             // The console banner shows output that arrived between the last payload
             // render and the user's current click. Once they answer, those messages
             // are "consumed" — wipe so the next step starts with a clean slate.
@@ -552,6 +552,10 @@ public sealed partial class WizardPage : Page
             || text.Contains("authorize", StringComparison.OrdinalIgnoreCase)
             || text.Contains("login", StringComparison.OrdinalIgnoreCase)
             || text.Contains("sign in", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("设备", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("授权", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("登录", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("登陆", StringComparison.OrdinalIgnoreCase)
             || text.Contains("oauth", StringComparison.OrdinalIgnoreCase)
             ? 300_000
             : 30_000;
@@ -712,7 +716,7 @@ public sealed partial class WizardPage : Page
             IsTextSelectionEnabled = true,
             VerticalAlignment = VerticalAlignment.Center
         };
-        var copy = new Button { Content = "Copy", Padding = new Thickness(8, 4, 8, 4) };
+        var copy = new Button { Content = "复制", Padding = new Thickness(8, 4, 8, 4) };
         copy.Click += (_, _) =>
         {
             var package = new DataPackage();
@@ -743,12 +747,12 @@ public sealed partial class WizardPage : Page
         _errorState = true;
         BusyRing.Visibility = Visibility.Collapsed;
         BusyRing.IsActive = false;
-        StatusText.Text = "Wizard needs attention";
+        StatusText.Text = "向导需要处理";
         ErrorText.Text = message;
         ErrorText.Visibility = Visibility.Visible;
-        PrimaryButton.Content = "Start wizard again";
+        PrimaryButton.Content = "重新启动向导";
         PrimaryButton.IsEnabled = true;
-        SecondaryButton.Content = "Skip wizard";
+        SecondaryButton.Content = "跳过向导";
         SecondaryButton.IsEnabled = true;
         SecondaryButton.Visibility = Visibility.Visible;
         HideRecoveryActions();
@@ -768,7 +772,7 @@ public sealed partial class WizardPage : Page
     {
         AdvanceOperationGeneration();
         HideRecoveryActions();
-        SetBusy("Skipping wizard...");
+        SetBusy("正在跳过向导...");
         await CancelCurrentSessionAsync();
         if (_config!.SkipPermissions)
             SetupWindow.Active?.NavigateToComplete(true, TimeSpan.Zero, _config.LogPath);
@@ -820,11 +824,11 @@ public sealed partial class WizardPage : Page
 
     private static string DisplayTitleFor(string stepType) => stepType switch
     {
-        "confirm" => "Confirm",
-        "select" => "Choose an option",
-        "multiselect" => "Choose options",
-        "text" => "Enter value",
-        _ => "Setup"
+        "confirm" => "确认",
+        "select" => "选择一个选项",
+        "multiselect" => "选择多个选项",
+        "text" => "输入内容",
+        _ => "设置"
     };
 
     private sealed record WizardOption(string Value, string Label, string Hint);

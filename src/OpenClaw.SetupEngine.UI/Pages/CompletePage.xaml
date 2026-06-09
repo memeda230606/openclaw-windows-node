@@ -26,12 +26,12 @@
             </Border>
 
             <!-- Title -->
-            <TextBlock x:Name="TitleText" Text="All set!"
+            <TextBlock x:Name="TitleText" Text="设置完成！"
                        FontSize="32" FontWeight="SemiBold"
                        HorizontalAlignment="Center" />
 
             <!-- Subtitle -->
-            <TextBlock x:Name="SubtitleText" Text="OpenClaw is ready to go"
+            <TextBlock x:Name="SubtitleText" Text="OpenClaw 已准备就绪"
                        FontSize="14" Opacity="0.6"
                        HorizontalAlignment="Center" />
 
@@ -47,7 +47,7 @@
                                      Visibility="Collapsed"
                                      Padding="0"
                                      FontSize="13" />
-                    <HyperlinkButton x:Name="ViewLogLink" Content="View full log →"
+                    <HyperlinkButton x:Name="ViewLogLink" Content="查看完整日志 →"
                                      Click="ViewLog_Click" Padding="0"
                                      FontSize="13" />
                 </StackPanel>
@@ -60,26 +60,26 @@
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons" FontSize="16"
                                    VerticalAlignment="Center" Foreground="#FFC107" />
-                        <TextBlock Text="Node Mode Active" FontSize="15" FontWeight="SemiBold" />
+                        <TextBlock Text="节点模式已启用" FontSize="15" FontWeight="SemiBold" />
                     </StackPanel>
                     <TextBlock TextWrapping="Wrap" FontSize="13" Opacity="0.85"
-                               Text="This PC will operate as a remote compute node. The gateway can invoke screen capture, camera, and system commands on this machine." />
+                               Text="这台电脑将作为远程计算节点运行。网关可以在此电脑上调用屏幕捕获、摄像头和系统命令。" />
                 </StackPanel>
             </Border>
 
             <!-- Launch at startup toggle -->
             <Grid x:Name="StartupRow" ColumnDefinitions="*,Auto" Margin="0,24,0,0">
-                <TextBlock Text="Launch OpenClaw at startup?" FontSize="14"
+                <TextBlock Text="开机启动 OpenClaw？" FontSize="14"
                            VerticalAlignment="Center" Grid.Column="0" />
                 <ToggleSwitch x:Name="StartupToggle" Grid.Column="1"
-                              OnContent="On" OffContent="Off" />
+                              OnContent="启用" OffContent="关闭" />
             </Grid>
 
         </StackPanel>
 
         <!-- Bottom: Finish button -->
         <Button Grid.Row="1" x:Name="LaunchButton"
-                Content="Finish"
+                Content="完成"
                 HorizontalAlignment="Stretch"
                 Height="44" FontSize="15" FontWeight="SemiBold"
                 Click="LaunchButton_Click">

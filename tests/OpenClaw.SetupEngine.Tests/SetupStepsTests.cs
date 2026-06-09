@@ -2,6 +2,8 @@ using OpenClaw.Connection;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace OpenClaw.SetupEngine.Tests;
 
@@ -27,6 +29,8 @@ public class SetupStepsTests : IDisposable
 
     public void Dispose()
     {
+        OssDependencyResolver.AssetDownloaderOverride = null;
+        OssDependencyResolver.AssetFileDownloaderOverride = null;
         Environment.SetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR", _prevDataDir);
         Environment.SetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR", _prevLocalDataDir);
         // slopwatch-ignore: SW003 Test cleanup or fixture teardown is best-effort and must not hide the test outcome.
@@ -320,6 +324,104 @@ public class SetupStepsTests : IDisposable
         Assert.Contains("--location", installCall.Arguments);
         Assert.Contains(Path.Combine(ctx.LocalDataDir, "wsl", "OpenClawGateway"), installCall.Arguments);
         Assert.Contains("--web-download", installCall.Arguments);
+    }
+
+    [Fact]
+    public async Task CreateWslInstance_UsesOssRootfsImportWhenManifestProvidesUbuntuRootfs()
+    {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        var rootfsBytes = Encoding.UTF8.GetBytes("rootfs tarball test payload");
+        var rootfsSha256 = Convert.ToHexString(SHA256.HashData(rootfsBytes)).ToLowerInvariant();
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "version": "test",
+            "ubuntuWslRootfs": {
+                "url": "https://oss.example.test/openclaw/wsl/ubuntu.rootfs.tar.gz",
+                "sha256": "__SHA256__",
+                "size": __SIZE__
+            }
+        }
+        """
+            .Replace("__SHA256__", rootfsSha256, StringComparison.Ordinal)
+            .Replace("__SIZE__", rootfsBytes.Length.ToString(), StringComparison.Ordinal));
+
+        var imported = false;
+        var commands = new FakeCommandRunner(args =>
+        {
+            if (args.SequenceEqual(["--list", "--quiet"]))
+                return Ok(imported ? "OpenClawGateway\n" : "");
+            if (args.Contains("--import"))
+            {
+                imported = true;
+                return Ok("Importing Ubuntu-24.04\n");
+            }
+            if (args.SequenceEqual(["--list", "--verbose"]))
+                return Ok("  NAME              STATE           VERSION\n* OpenClawGateway   Stopped         2\n");
+            if (args.SequenceEqual(["-d", "OpenClawGateway", "-u", "root", "--", "sh", "-lc", "id -u && test -d / && echo OPENCLAW_FRESH_WSL_READY"]))
+                return Ok("0\nOPENCLAW_FRESH_WSL_READY\n");
+
+            return Fail($"unexpected args: {string.Join(' ', args)}");
+        });
+        var ctx = CreateContext(new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        }, commands);
+
+        OssDependencyResolver.AssetFileDownloaderOverride = (uri, outputPath, _) =>
+        {
+            Assert.Equal("https://oss.example.test/openclaw/wsl/ubuntu.rootfs.tar.gz", uri.ToString());
+            File.WriteAllBytes(outputPath, rootfsBytes);
+            return Task.CompletedTask;
+        };
+
+        var result = await new CreateWslInstanceStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Message);
+        Assert.DoesNotContain(commands.Calls, c => c.Arguments.Contains("--install"));
+        var importCall = Assert.Single(commands.Calls, c => c.Arguments.Contains("--import"));
+        Assert.Contains("OpenClawGateway", importCall.Arguments);
+        Assert.Contains(Path.Combine(ctx.LocalDataDir, "wsl", "OpenClawGateway"), importCall.Arguments);
+        Assert.Contains("--version", importCall.Arguments);
+        Assert.Contains("2", importCall.Arguments);
+        Assert.Contains(importCall.Arguments, arg => arg.EndsWith("ubuntu.rootfs.tar.gz", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CreateWslInstance_FailsWhenOssRootfsMissingAndFallbackDisabled()
+    {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "version": "test"
+        }
+        """);
+        var commands = new FakeCommandRunner(args =>
+            args.SequenceEqual(["--list", "--quiet"])
+                ? Ok("")
+                : Fail($"unexpected args: {string.Join(' ', args)}"));
+        var ctx = CreateContext(new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        }, commands);
+
+        var result = await new CreateWslInstanceStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("ubuntuWslRootfs.url", result.Message);
+        Assert.DoesNotContain(commands.Calls, c => c.Arguments.Contains("--install"));
+        Assert.DoesNotContain(commands.Calls, c => c.Arguments.Contains("--import"));
     }
 
     [Fact]
@@ -797,6 +899,163 @@ public class SetupStepsTests : IDisposable
         Assert.Contains("HTTPS", result.Message);
     }
 
+    [Fact]
+    public async Task InstallCli_UsesOssManifestInstallUrlWhenEnabled()
+    {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        var scriptBytes = Encoding.UTF8.GetBytes("#!/usr/bin/env bash\necho installing openclaw\n");
+        var scriptSha256 = Convert.ToHexString(SHA256.HashData(scriptBytes)).ToLowerInvariant();
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "version": "test",
+            "installCli": {
+                "url": "https://oss.example.test/openclaw/install-cli.sh",
+                "sha256": "__SHA256__",
+                "size": __SIZE__,
+                "environment": {
+                    "OPENCLAW_NODE_DIST_BASE_URL": "https://oss.example.test/node/dist",
+                    "NPM_CONFIG_REGISTRY": "https://registry.example.test/"
+                }
+            }
+        }
+        """
+            .Replace("__SHA256__", scriptSha256, StringComparison.Ordinal)
+            .Replace("__SIZE__", scriptBytes.Length.ToString(), StringComparison.Ordinal));
+
+        var commands = new FakeCommandRunner(
+            _ => Ok(),
+            (_, _, _) => Ok("openclaw 2026.6.1"));
+        var ctx = CreateContext(new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        }, commands);
+
+        OssDependencyResolver.AssetDownloaderOverride = (uri, _) =>
+        {
+            Assert.Equal("https://oss.example.test/openclaw/install-cli.sh", uri.ToString());
+            return Task.FromResult(scriptBytes);
+        };
+        try
+        {
+            var result = await new InstallCliStep().ExecuteAsync(ctx, CancellationToken.None);
+
+            Assert.True(result.IsSuccess);
+            Assert.NotEmpty(commands.WslCalls);
+            Assert.Equal("bash -s", commands.WslCalls[0].Command);
+            Assert.Equal(Encoding.UTF8.GetString(scriptBytes), commands.WslCalls[0].StdinInput);
+            Assert.NotNull(commands.WslCalls[0].Environment);
+            Assert.Equal(
+                "https://oss.example.test/node/dist",
+                commands.WslCalls[0].Environment!["OPENCLAW_NODE_DIST_BASE_URL"]);
+            Assert.Equal(
+                "https://registry.example.test/",
+                commands.WslCalls[0].Environment!["NPM_CONFIG_REGISTRY"]);
+            Assert.DoesNotContain("https://oss.example.test/openclaw/install-cli.sh", commands.WslCalls[0].Command);
+        }
+        finally
+        {
+            OssDependencyResolver.AssetDownloaderOverride = null;
+        }
+    }
+
+    [Fact]
+    public async Task InstallCli_KeepsExplicitGatewayUrlPriorityOverOssManifest()
+    {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "installCli": {
+                "url": "https://oss.example.test/openclaw/install-cli.sh"
+            }
+        }
+        """);
+
+        var commands = new FakeCommandRunner(
+            _ => Ok(),
+            (_, _, _) => Ok("openclaw 2026.6.1"));
+        var ctx = CreateContext(new SetupConfig
+        {
+            Gateway = new GatewayConfig { InstallUrl = "https://custom.example.test/install.sh" },
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        }, commands);
+
+        var result = await new InstallCliStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Contains("https://custom.example.test/install.sh", commands.WslCalls[0].Command);
+        Assert.DoesNotContain("https://oss.example.test/openclaw/install-cli.sh", commands.WslCalls[0].Command);
+    }
+
+    [Fact]
+    public async Task InstallCli_FailsWhenOssScriptChecksumMismatchesAndFallbackDisabled()
+    {
+        var manifestPath = Path.Combine(_tempDir, "oss-dependencies.json");
+        File.WriteAllText(manifestPath, """
+        {
+            "schemaVersion": 1,
+            "installCli": {
+                "url": "https://oss.example.test/openclaw/install-cli.sh",
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+        }
+        """);
+
+        var ctx = CreateContext(new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = manifestPath,
+                AllowOfficialFallback = false
+            }
+        }, new FakeCommandRunner(_ => Ok(), (_, _, _) => Ok()));
+
+        OssDependencyResolver.AssetDownloaderOverride = (_, _) =>
+            Task.FromResult(Encoding.UTF8.GetBytes("#!/usr/bin/env bash\necho tampered\n"));
+        try
+        {
+            var result = await new InstallCliStep().ExecuteAsync(ctx, CancellationToken.None);
+
+            Assert.Equal(StepOutcome.Failed, result.Outcome);
+            Assert.Contains("SHA-256 mismatch", result.Message);
+        }
+        finally
+        {
+            OssDependencyResolver.AssetDownloaderOverride = null;
+        }
+    }
+
+    [Fact]
+    public async Task InstallCli_FailsWhenOssManifestInvalidAndFallbackDisabled()
+    {
+        var ctx = CreateContext(new SetupConfig
+        {
+            Oss = new OssMirrorConfig
+            {
+                Enabled = true,
+                ManifestPath = Path.Combine(_tempDir, "missing.json"),
+                AllowOfficialFallback = false
+            }
+        }, new FakeCommandRunner(_ => Ok(), (_, _, _) => Ok()));
+
+        var result = await new InstallCliStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("official fallback is disabled", result.Message);
+    }
+
     [Theory]
     [InlineData("gateway.auth.token")]
     [InlineData("gateway_nodes-allowCommands")]
@@ -1054,7 +1313,7 @@ public class SetupStepsTests : IDisposable
 
         var summary = ExistingConfigDetector.BuildReplacementSummary(config);
 
-        Assert.Contains("No existing configuration will be affected", summary);
+        Assert.Contains("现有配置不会受到影响", summary);
     }
 
     [Fact]
@@ -1072,8 +1331,8 @@ public class SetupStepsTests : IDisposable
 
         var summary = ExistingConfigDetector.BuildReplacementSummary(config);
 
-        Assert.Contains("WSL distro 'OpenClaw' will be deleted and recreated", summary);
-        Assert.Contains("Local gateway record will be replaced", summary);
+        Assert.Contains("WSL 发行版“OpenClaw”将被删除并重新创建", summary);
+        Assert.Contains("本地网关记录将被替换", summary);
     }
 
     [Fact]
@@ -1091,7 +1350,7 @@ public class SetupStepsTests : IDisposable
 
         var summary = ExistingConfigDetector.BuildReplacementSummary(config);
 
-        Assert.Contains("will NOT be affected", summary);
+        Assert.Contains("不会受到影响", summary);
         Assert.Contains("Remote Gateway", summary);
         Assert.Contains("SSH Tunnel", summary);
     }
@@ -1111,7 +1370,7 @@ public class SetupStepsTests : IDisposable
 
         var summary = ExistingConfigDetector.BuildReplacementSummary(config);
 
-        Assert.Contains("Device identity files for the local gateway will be regenerated", summary);
+        Assert.Contains("本地网关的设备身份文件将重新生成", summary);
     }
 
     [Fact]
@@ -1241,7 +1500,12 @@ public class SetupStepsTests : IDisposable
         Func<string, string, TimeSpan, CommandResult>? runInWsl = null) : ICommandRunner
     {
         public List<(string Executable, string[] Arguments)> Calls { get; } = [];
-        public List<(string DistroName, string Command, TimeSpan Timeout)> WslCalls { get; } = [];
+        public List<(
+            string DistroName,
+            string Command,
+            TimeSpan Timeout,
+            IReadOnlyDictionary<string, string>? Environment,
+            string? StdinInput)> WslCalls { get; } = [];
 
         public Task<CommandResult> RunAsync(
             string executable,
@@ -1262,12 +1526,13 @@ public class SetupStepsTests : IDisposable
             TimeSpan timeout,
             IReadOnlyDictionary<string, string>? environment = null,
             CancellationToken ct = default,
-            string? user = null)
+            string? user = null,
+            string? stdinInput = null)
         {
             if (runInWsl == null)
                 throw new NotSupportedException("RunInWslAsync is not expected in these tests.");
 
-            WslCalls.Add((distroName, command, timeout));
+            WslCalls.Add((distroName, command, timeout, environment, stdinInput));
             return Task.FromResult(runInWsl(distroName, command, timeout));
         }
     }

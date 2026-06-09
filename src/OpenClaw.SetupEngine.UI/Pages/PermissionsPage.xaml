@@ -9,13 +9,13 @@
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Spacing="12" HorizontalAlignment="Center">
-            <TextBlock Text="Grant permissions"
+            <TextBlock Text="授予权限"
                        FontSize="28" FontWeight="SemiBold"
                        HorizontalAlignment="Center" />
             <TextBlock TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="14" Opacity="0.7" MaxWidth="480"
                        HorizontalAlignment="Center"
-                       Text="OpenClaw works best when it can send notifications, access your camera and microphone, capture your screen, and know your location. Grant permissions below." />
+                       Text="OpenClaw 在可以发送通知、访问摄像头和麦克风、捕获屏幕并读取位置时效果最佳。请在下方授予权限。" />
         </StackPanel>
 
         <!-- Permission rows -->
@@ -29,16 +29,16 @@
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="14"
                                VerticalAlignment="Center" />
-                    <TextBlock Text="Refresh status" FontSize="13" VerticalAlignment="Center" />
+                    <TextBlock Text="刷新状态" FontSize="13" VerticalAlignment="Center" />
                 </StackPanel>
             </Button>
 
-            <Button Content="Back to gateway wizard"
+            <Button Content="返回网关向导"
                     HorizontalAlignment="Stretch"
                     Height="40"
                     Click="BackToWizard_Click" />
 
-            <Button Content="Next"
+            <Button Content="下一步"
                     HorizontalAlignment="Stretch"
                     Height="44" FontSize="15" FontWeight="SemiBold"
                     Click="Next_Click">

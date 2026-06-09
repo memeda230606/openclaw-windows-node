@@ -85,6 +85,21 @@
     "ExtraConfig": null
   },
 
+  // ─── OSS Mirror Configuration ───
+  // Controls optional dependency mirror manifest resolution. Gateway.InstallUrl still has highest priority.
+  // The manifest can also provide installCli.environment for mirror variables such as
+  // OPENCLAW_NODE_DIST_BASE_URL, NPM_CONFIG_REGISTRY, and COREPACK_NPM_REGISTRY.
+  "Oss": {
+    // false = use official dependency URLs; true = resolve dependency URLs from the configured manifest
+    "Enabled": true,
+    // HTTPS JSON manifest URL hosted on OSS/CDN
+    "ManifestUrl": "https://openclaw-ipk50-mirror.oss-cn-heyuan.aliyuncs.com/openclaw/windows-deps/latest.json",
+    // Local JSON manifest path for offline/test runs. Takes precedence over ManifestUrl when set.
+    "ManifestPath": null,
+    // true = use official URLs if the manifest is unavailable or invalid
+    "AllowOfficialFallback": true
+  },
+
   // ─── Node Capabilities ───
   // Which capabilities to advertise to the gateway during node pairing.
   // The tray handles actual command execution; setup just registers the declarations.

@@ -11,7 +11,7 @@
         <StackPanel Grid.Row="0" Padding="56,24,56,0" Spacing="4">
             <Image Source="ms-appx:///OpenClaw.SetupEngine.UI/Assets/Setup/Lobster.png" Width="44" Height="44"
                    HorizontalAlignment="Center" Margin="0,0,0,2" />
-            <TextBlock Text="Setting up locally"
+            <TextBlock Text="正在配置本地环境"
                        FontSize="26" FontWeight="SemiBold"
                        HorizontalAlignment="Center" />
             <TextBlock x:Name="SubtitleText"
@@ -53,13 +53,13 @@
             <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                 <Button x:Name="OpenLogButton"
                         Grid.Column="1"
-                        Content="Open log" FontSize="12"
+                        Content="打开日志" FontSize="12"
                         Visibility="Collapsed"
                         Click="OpenLog_Click"
                         Padding="8,4,8,4" />
                 <Button x:Name="LogToggleButton"
                         Grid.Column="2"
-                        Content="Show logs ▲" FontSize="12"
+                        Content="显示日志 ▲" FontSize="12"
                         Click="LogToggle_Click"
                         Padding="8,4,8,4" />
             </Grid>

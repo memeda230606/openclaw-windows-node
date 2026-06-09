@@ -81,21 +81,21 @@ public sealed class ExistingConfigDetector
     public static string BuildReplacementSummary(ExistingConfig config)
     {
         if (!config.HasLocalGateway && !config.HasDistro)
-            return "A new local WSL gateway will be created. No existing configuration will be affected.";
+            return "将创建新的本地 WSL 网关。现有配置不会受到影响。";
 
         var lines = new List<string>();
 
         if (config.HasDistro)
-            lines.Add($"• WSL distro '{config.DistroName}' will be deleted and recreated");
+            lines.Add($"• WSL 发行版“{config.DistroName}”将被删除并重新创建");
         if (config.HasLocalGateway)
-            lines.Add("• Local gateway record will be replaced");
+            lines.Add("• 本地网关记录将被替换");
         if (config.HasIdentityFiles)
-            lines.Add("• Device identity files for the local gateway will be regenerated");
+            lines.Add("• 本地网关的设备身份文件将重新生成");
 
         if (config.PreservedGatewayCount > 0)
         {
             lines.Add(string.Empty);
-            lines.Add($"The following {config.PreservedGatewayCount} gateway(s) will NOT be affected:");
+            lines.Add($"以下 {config.PreservedGatewayCount} 个网关不会受到影响：");
             foreach (var name in config.PreservedGatewayNames)
                 lines.Add($"  • {name}");
         }

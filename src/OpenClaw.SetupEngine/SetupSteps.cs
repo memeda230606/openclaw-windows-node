@@ -172,6 +172,17 @@ internal static class WslInstallSupport
             "--web-download"
         ];
 
+    public static string[] BuildImportArgs(string distroName, string installPath, string rootfsPath)
+        =>
+        [
+            "--import",
+            distroName,
+            installPath,
+            rootfsPath,
+            "--version",
+            "2"
+        ];
+
     public static bool TryGetDistroVersion(string verboseOutput, string distroName, out int version)
     {
         foreach (var rawLine in Normalize(verboseOutput).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
@@ -671,7 +682,13 @@ public sealed class CreateWslInstanceStep : SetupStep
 
         Directory.CreateDirectory(Path.GetDirectoryName(installPath)!);
 
-        var installArgs = WslInstallSupport.BuildDirectInstallArgs(baseDistro, distro, installPath);
+        var rootfsResolution = await OssDependencyResolver.ResolveUbuntuWslRootfsAsync(ctx.Config, ctx.LocalDataDir, ctx.Logger, ct);
+        if (!rootfsResolution.Success)
+            return StepResult.Fail(rootfsResolution.ErrorMessage!);
+
+        var installArgs = rootfsResolution.LocalPath is { Length: > 0 } rootfsPath
+            ? WslInstallSupport.BuildImportArgs(distro, installPath, rootfsPath)
+            : WslInstallSupport.BuildDirectInstallArgs(baseDistro, distro, installPath);
         ctx.Logger.Info($"Installing fresh WSL distro with arguments: {string.Join(' ', installArgs)}");
         var install = await ctx.Commands.RunAsync(
             WslConstants.WslExePath,
@@ -1097,8 +1114,12 @@ public sealed class InstallCliStep : SetupStep
         var distro = ctx.DistroName!;
         var user = ctx.Config.Wsl.User;
 
-        // Download and run install script (URL configurable)
-        var installUrl = ctx.Config.Gateway.InstallUrl ?? GatewayLkgVersion.DefaultInstallUrl;
+        // Download and run install script. Explicit Gateway.InstallUrl wins over OSS manifest.
+        var installResolution = await OssDependencyResolver.ResolveInstallCliAsync(ctx.Config, ctx.Logger, ct);
+        if (!installResolution.Success)
+            return StepResult.Fail(installResolution.ErrorMessage!);
+
+        var installUrl = installResolution.Url!;
 
         // Validate URL is HTTPS to prevent downgrade attacks
         if (!Uri.TryCreate(installUrl, UriKind.Absolute, out var parsedUrl) ||
@@ -1110,14 +1131,22 @@ public sealed class InstallCliStep : SetupStep
         string installScript;
         try
         {
-            installScript = BuildInstallCommand(installUrl, ctx.Config.Gateway.Version);
+            installScript = installResolution.VerifiedScript != null
+                ? BuildVerifiedInstallCommand(ctx.Config.Gateway.Version)
+                : BuildInstallCommand(installUrl, ctx.Config.Gateway.Version);
         }
         catch (ArgumentException ex)
         {
             return StepResult.Fail(ex.Message);
         }
 
-        var result = await ctx.Commands.RunInWslAsync(distro, installScript, TimeSpan.FromMinutes(5), ct: ct);
+        var result = await ctx.Commands.RunInWslAsync(
+            distro,
+            installScript,
+            TimeSpan.FromMinutes(5),
+            environment: installResolution.Environment,
+            ct: ct,
+            stdinInput: installResolution.VerifiedScript);
 
         if (result.ExitCode != 0)
             return StepResult.Fail($"CLI install failed (exit {result.ExitCode}): {result.Stderr}");
@@ -1162,6 +1191,19 @@ public sealed class InstallCliStep : SetupStep
 
         var escapedVersion = ShellEscape(trimmedVersion);
         return $"curl -fsSL --proto '=https' --tlsv1.2 '{escapedUrl}' | bash -s -- --version '{escapedVersion}'";
+    }
+
+    internal static string BuildVerifiedInstallCommand(string? requestedVersion)
+    {
+        if (string.IsNullOrWhiteSpace(requestedVersion))
+            return "bash -s";
+
+        var trimmedVersion = requestedVersion.Trim();
+        if (trimmedVersion.Contains('\n') || trimmedVersion.Contains('\r'))
+            throw new ArgumentException("Gateway version cannot contain newlines.");
+
+        var escapedVersion = ShellEscape(trimmedVersion);
+        return $"bash -s -- --version '{escapedVersion}'";
     }
 
     private static async Task<StepResult> EnsureCliOnDefaultPathAsync(

@@ -13,6 +13,7 @@ public sealed partial class CompletePage : Page
 {
     private static readonly Regex s_urlRegex = new(@"https?://[^\s)]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private string? _logPath;
+    private bool _closeOnly;
 
     public CompletePage()
     {
@@ -30,25 +31,27 @@ public sealed partial class CompletePage : Page
             {
                 SuccessIcon.Visibility = Visibility.Visible;
                 FailureIcon.Visibility = Visibility.Collapsed;
-                TitleText.Text = "All set!";
-                SubtitleText.Text = "OpenClaw is ready to go";
+                TitleText.Text = "设置完成！";
+                SubtitleText.Text = "OpenClaw 已准备就绪";
                 ErrorCard.Visibility = Visibility.Collapsed;
                 HelpLink.Visibility = Visibility.Collapsed;
+                _closeOnly = false;
             }
             else
             {
-                var errorMessage = args.ErrorMessage ?? "Unknown error";
+                var errorMessage = args.ErrorMessage ?? "未知错误";
                 var helpUrl = ExtractHelpUrl(errorMessage);
 
                 SuccessIcon.Visibility = Visibility.Collapsed;
                 FailureIcon.Visibility = Visibility.Visible;
-                TitleText.Text = "Setup failed";
+                TitleText.Text = "安装失败";
                 SubtitleText.Text = helpUrl is null
-                    ? args.ErrorMessage ?? "An error occurred during setup"
-                    : "Follow the steps below to resolve the setup issue and retry.";
+                    ? args.ErrorMessage ?? "安装过程中发生错误"
+                    : "请按下方提示解决安装问题后重试。";
                 NodeModeBanner.Visibility = Visibility.Collapsed;
                 StartupRow.Visibility = Visibility.Collapsed;
-                LaunchButton.Content = "Close";
+                LaunchButton.Content = "关闭";
+                _closeOnly = true;
 
                 // Show error card with details and log link
                 ErrorCard.Visibility = Visibility.Visible;
@@ -56,8 +59,8 @@ public sealed partial class CompletePage : Page
                 if (helpUrl != null)
                 {
                     HelpLink.Content = errorMessage.Contains("WSL", StringComparison.OrdinalIgnoreCase)
-                        ? "Update WSL →"
-                        : "Open help link →";
+                        ? "更新 WSL →"
+                        : "打开帮助链接 →";
                     HelpLink.NavigateUri = helpUrl;
                     HelpLink.Visibility = Visibility.Visible;
                 }
@@ -68,7 +71,7 @@ public sealed partial class CompletePage : Page
                 if (args.LogPath != null)
                 {
                     var displayPath = LogFileLauncher.ResolveRealPath(args.LogPath);
-                    ViewLogLink.Content = $"View full log → {displayPath}";
+                    ViewLogLink.Content = $"查看完整日志 → {displayPath}";
                     ToolTipService.SetToolTip(ViewLogLink, displayPath);
                     ViewLogLink.Visibility = Visibility.Visible;
                 }
@@ -104,7 +107,7 @@ public sealed partial class CompletePage : Page
 
     private void LaunchButton_Click(object sender, RoutedEventArgs e)
     {
-        if (LaunchButton.Content?.ToString() != "Close")
+        if (!_closeOnly)
         {
             var enableAutoStart = StartupToggle.Visibility == Visibility.Visible && StartupToggle.IsOn;
             if (SetupWindow.Active?.RequestSetupCompleted(enableAutoStart) == true)

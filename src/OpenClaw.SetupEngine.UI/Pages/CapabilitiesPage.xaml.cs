@@ -13,15 +13,15 @@ public sealed partial class CapabilitiesPage : Page
     // (config property, display name, description, fluent icon glyph)
     private static readonly (string Key, string Name, string Desc, string Glyph)[] Capabilities =
     [
-        ("System", "System", "Shell commands, files, clipboard", "\uE756"),
-        ("Canvas", "Canvas", "Whiteboard and annotations", "\uE790"),
-        ("Screen", "Screen capture", "Screenshots and recording", "\uE7F4"),
-        ("Camera", "Camera", "Webcam photos and video", "\uE722"),
-        ("Location", "Location", "Share device location", "\uE81D"),
-        ("Browser", "Browser", "Web navigation and automation", "\uE774"),
-        ("Device", "Device", "Volume, brightness, system info", "\uE772"),
-        ("Tts", "Text-to-speech", "Speak text aloud", "\uE767"),
-        ("Stt", "Speech-to-text", "Transcribe spoken audio", "\uE720"),
+        ("System", "系统", "Shell 命令、文件、剪贴板", "\uE756"),
+        ("Canvas", "画布", "白板与标注", "\uE790"),
+        ("Screen", "屏幕捕获", "截图与录屏", "\uE7F4"),
+        ("Camera", "摄像头", "拍照与视频", "\uE722"),
+        ("Location", "位置", "共享设备位置", "\uE81D"),
+        ("Browser", "浏览器", "网页导航与自动化", "\uE774"),
+        ("Device", "设备", "音量、亮度、系统信息", "\uE772"),
+        ("Tts", "文本转语音", "朗读文本", "\uE767"),
+        ("Stt", "语音转文字", "转写语音", "\uE720"),
     ];
 
     public CapabilitiesPage()

@@ -31,6 +31,10 @@ public class SetupConfigTests : IDisposable
         Assert.Equal("trace", config.LogLevel);
         Assert.False(config.RollbackOnFailure);
         Assert.Equal("loopback", config.Gateway.Bind);
+        Assert.False(config.Oss.Enabled);
+        Assert.Null(config.Oss.ManifestUrl);
+        Assert.Null(config.Oss.ManifestPath);
+        Assert.True(config.Oss.AllowOfficialFallback);
         Assert.False(config.SkipPermissions);
         Assert.False(config.SkipWizard);
     }
@@ -88,6 +92,11 @@ public class SetupConfigTests : IDisposable
             "Gateway": {
                 "Bind": "localhost",
                 "ReloadMode": "cold"
+            },
+            "Oss": {
+                "Enabled": true,
+                "ManifestUrl": "https://oss.example.test/openclaw/dependencies.json",
+                "AllowOfficialFallback": false
             }
         }
         """);
@@ -98,6 +107,9 @@ public class SetupConfigTests : IDisposable
         Assert.True(config.Headless);
         Assert.Equal("localhost", config.Gateway.Bind);
         Assert.Equal("cold", config.Gateway.ReloadMode);
+        Assert.True(config.Oss.Enabled);
+        Assert.Equal("https://oss.example.test/openclaw/dependencies.json", config.Oss.ManifestUrl);
+        Assert.False(config.Oss.AllowOfficialFallback);
     }
 
     [Fact]
@@ -107,22 +119,34 @@ public class SetupConfigTests : IDisposable
         var prevDistro = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_DISTRO");
         var prevPort = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_PORT");
         var prevHeadless = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_HEADLESS");
+        var prevOssEnabled = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_ENABLED");
+        var prevOssManifestUrl = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_URL");
+        var prevOssFallback = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK");
         try
         {
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_DISTRO", "EnvDistro");
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_PORT", "9876");
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_HEADLESS", "true");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ENABLED", "true");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_URL", "https://oss.example.test/openclaw/dependencies.json");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK", "false");
 
             var config = SetupConfig.FromEnvironment();
             Assert.Equal("EnvDistro", config.DistroName);
             Assert.Equal(9876, config.GatewayPort);
             Assert.True(config.Headless);
+            Assert.True(config.Oss.Enabled);
+            Assert.Equal("https://oss.example.test/openclaw/dependencies.json", config.Oss.ManifestUrl);
+            Assert.False(config.Oss.AllowOfficialFallback);
         }
         finally
         {
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_DISTRO", prevDistro);
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_PORT", prevPort);
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_HEADLESS", prevHeadless);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ENABLED", prevOssEnabled);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_URL", prevOssManifestUrl);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK", prevOssFallback);
         }
     }
 
