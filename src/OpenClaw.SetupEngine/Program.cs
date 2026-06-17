@@ -112,6 +112,8 @@ public static class Program
         };
 
         var ctx = new SetupContext(config, logger, journal, commands, cts.Token);
+        if (!uninstall)
+            await LongwangModelManifestResolver.TryApplyAsync(config.ModelSetup, logger, cts.Token);
 
         // Build step pipeline
         List<SetupStep> steps;

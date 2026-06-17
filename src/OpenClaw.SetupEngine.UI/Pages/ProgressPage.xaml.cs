@@ -111,7 +111,16 @@ public sealed partial class ProgressPage : Page
             var success = result.Outcome == PipelineOutcome.Success;
             if (success)
             {
-                if (!config.SkipWizard)
+                if (config.ModelSetup.Enabled)
+                {
+                    if (_rows.TryGetValue("finish", out var finishRow))
+                        finishRow.SetStatus(StepStatus.Running);
+                    SubtitleText.Text = "正在打开模型设置...";
+                    await Task.Delay(900);
+                    finishRow?.SetStatus(StepStatus.Done);
+                    SetupWindow.Active?.NavigateToModelSetup();
+                }
+                else if (!config.SkipWizard)
                 {
                     if (_rows.TryGetValue("finish", out var finishRow))
                         finishRow.SetStatus(StepStatus.Running);

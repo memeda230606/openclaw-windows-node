@@ -1478,6 +1478,10 @@ public sealed class ConfigureGatewayStep : SetupStep
         // Validate bind value — only "loopback" and "lan" are accepted
         if (gw.Bind is not ("loopback" or "lan"))
             return StepResult.Terminal($"Invalid Gateway.Bind value '{gw.Bind}'. Must be 'loopback' or 'lan'.");
+        if (gw.AuthMode is not ("none" or "token" or "password" or "trusted-proxy"))
+            return StepResult.Terminal($"Invalid Gateway.AuthMode value '{gw.AuthMode}'. Must be 'none', 'token', 'password', or 'trusted-proxy'.");
+        if (gw.AuthMode == "none" && gw.Bind != "loopback")
+            return StepResult.Terminal("Gateway.AuthMode 'none' is only allowed when Gateway.Bind is 'loopback'.");
 
         // Generate a shared gateway token
         var token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
@@ -1612,6 +1616,246 @@ public sealed class ConfigureGatewayStep : SetupStep
 
     internal static bool IsSafeExtraConfigKey(string value)
         => System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z0-9._-]+$");
+}
+
+public sealed class ConfigureLongwangModelStep : SetupStep
+{
+    internal const string ApiKeyEnvironmentName = "LONGWANG_SETUP_API_KEY";
+    internal const string OpenClawApiKeyEnvironmentName = "LONGWANG_API_KEY";
+    internal const string SuccessMarker = "LONGWANG_MODEL_CONFIGURED";
+    internal static readonly TimeSpan ConfigBaseBudget = TimeSpan.FromSeconds(45);
+    internal static readonly TimeSpan PerConfigCommandBudget = TimeSpan.FromSeconds(15);
+    internal static readonly TimeSpan MinConfigurationTimeout = TimeSpan.FromSeconds(150);
+
+    public override string Id => "configure-longwang-model";
+    public override string DisplayName => "Configure Longwang model";
+    public override bool CanRetry => false;
+
+    public override bool CanSkip(SetupContext ctx)
+        => !ctx.Config.ModelSetup.Enabled || !ctx.Config.ModelSetup.UseLongwang;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        var model = ctx.Config.ModelSetup;
+        var apiKey = model.ApiKey?.Trim();
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return StepResult.Fail("Missing Longwang API key.");
+        if (apiKey.Contains('\r') || apiKey.Contains('\n'))
+            return StepResult.Fail("Longwang API key cannot contain line breaks.");
+
+        if (!IsSafeProviderId(model.ProviderId))
+            return StepResult.Fail($"Invalid Longwang provider id '{model.ProviderId}'.");
+        if (!IsSafeModelId(model.ModelId))
+            return StepResult.Fail($"Invalid Longwang model id '{model.ModelId}'.");
+        if (!IsSafeProviderId(model.Api))
+            return StepResult.Fail($"Invalid Longwang model API adapter '{model.Api}'.");
+        if (!IsSafeAuthProfileId(BuildAuthProfileId(model)))
+            return StepResult.Fail($"Invalid Longwang auth profile id '{BuildAuthProfileId(model)}'.");
+        foreach (var availableModel in model.EffectiveModels)
+        {
+            if (!ValidateModelConfig(availableModel, out var validationError))
+                return StepResult.Fail(validationError);
+        }
+        if (!Uri.TryCreate(model.BaseUrl, UriKind.Absolute, out var baseUri) ||
+            baseUri.Scheme is not ("https" or "http"))
+        {
+            return StepResult.Fail($"Invalid Longwang base URL '{model.BaseUrl}'.");
+        }
+
+        var configCommands = BuildConfigCommands(model);
+        var script = $"""
+            set -e
+            {ctx.WslPathPrefix}
+            {configCommands}
+            echo "{SuccessMarker}"
+            """;
+
+        var env = new Dictionary<string, string> { [ApiKeyEnvironmentName] = apiKey };
+        var timeout = ComputeConfigurationTimeout(configCommands);
+        var result = await ctx.Commands.RunInWslAsync(ctx.DistroName!, script, timeout, env, ct);
+
+        if (result.ExitCode != 0 || !result.Stdout.Contains(SuccessMarker, StringComparison.Ordinal))
+        {
+            if (result.TimedOut)
+                return StepResult.Fail(
+                    $"Longwang model configuration timed out after {timeout.TotalSeconds:0}s while running openclaw config inside WSL.");
+
+            return StepResult.Fail($"Longwang model configuration failed (exit {result.ExitCode}): {result.Stderr}");
+        }
+
+        ctx.Logger.Info($"Configured default model: {model.DefaultModelRef}; available models: {model.EffectiveModels.Count}");
+        return StepResult.Ok($"Configured {model.DefaultModelRef}");
+    }
+
+    internal static string BuildConfigCommands(ModelSetupConfig model)
+    {
+        var providerJson = JsonSerializer.Serialize(BuildProviderConfig(model));
+        var allowlist = new Dictionary<string, object>();
+        foreach (var availableModel in model.EffectiveModels)
+        {
+            allowlist[$"{model.ProviderId}/{availableModel.Id}"] = new { };
+        }
+
+        var allowlistJson = JsonSerializer.Serialize(allowlist);
+        var authProfileId = BuildAuthProfileId(model);
+
+        return $"""
+            openclaw config set env.{OpenClawApiKeyEnvironmentName} "$LONGWANG_SETUP_API_KEY" >/dev/null
+            printf '%s\n' "$LONGWANG_SETUP_API_KEY" | openclaw models auth paste-api-key --provider {ShellEscape(model.ProviderId)} --profile-id {ShellEscape(authProfileId)} >/dev/null
+            openclaw config set models.mode merge
+            openclaw config set models.providers.{model.ProviderId} {ShellEscape(providerJson)} --strict-json --merge
+            openclaw config set agents.defaults.models {ShellEscape(allowlistJson)} --strict-json --merge
+            openclaw config set agents.defaults.model.primary {ShellEscape(model.DefaultModelRef)}
+            openclaw models auth list --provider {ShellEscape(model.ProviderId)} >/dev/null
+            openclaw config get agents.defaults.model.primary >/dev/null
+            """;
+    }
+
+    internal static TimeSpan ComputeConfigurationTimeout(string configCommands)
+    {
+        var budget = ConfigBaseBudget + PerConfigCommandBudget * CountConfigSetCommands(configCommands);
+        return budget > MinConfigurationTimeout ? budget : MinConfigurationTimeout;
+    }
+
+    private static object BuildProviderConfig(ModelSetupConfig model)
+        => new
+        {
+            baseUrl = model.BaseUrl,
+            apiKey = $"${{{OpenClawApiKeyEnvironmentName}}}",
+            auth = "api-key",
+            api = model.Api,
+            timeoutSeconds = 300,
+            models = model.EffectiveModels.Select(BuildModelConfig).ToArray()
+        };
+
+    private static object BuildModelConfig(LongwangModelConfig model)
+    {
+        var compat = new Dictionary<string, object>
+        {
+            ["supportsTools"] = model.SupportsTools,
+            ["supportsUsageInStreaming"] = model.SupportsUsageInStreaming
+        };
+
+        if (!string.IsNullOrWhiteSpace(model.ThinkingFormat))
+            compat["thinkingFormat"] = model.ThinkingFormat;
+        if (model.SupportsReasoningEffort)
+            compat["supportsReasoningEffort"] = true;
+        if (!string.IsNullOrWhiteSpace(model.MaxTokensField))
+            compat["maxTokensField"] = model.MaxTokensField;
+
+        return new Dictionary<string, object>
+        {
+            ["id"] = model.Id,
+            ["name"] = string.IsNullOrWhiteSpace(model.Name) ? model.Id : model.Name,
+            ["reasoning"] = model.Reasoning,
+            ["input"] = NormalizeInput(model.Input),
+            ["cost"] = new
+            {
+                input = 0,
+                output = 0,
+                cacheRead = 0,
+                cacheWrite = 0
+            },
+            ["contextWindow"] = model.ContextWindow,
+            ["contextTokens"] = model.ContextTokens ?? model.ContextWindow,
+            ["maxTokens"] = model.MaxTokens,
+            ["compat"] = compat
+        };
+    }
+
+    private static bool ValidateModelConfig(LongwangModelConfig model, out string error)
+    {
+        if (!IsSafeModelId(model.Id))
+        {
+            error = $"Invalid Longwang model id '{model.Id}'.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(model.Name))
+        {
+            error = $"Longwang model '{model.Id}' must have a display name.";
+            return false;
+        }
+
+        if (model.ContextWindow <= 0)
+        {
+            error = $"Longwang model '{model.Id}' must have a positive context window.";
+            return false;
+        }
+
+        if (model.ContextTokens is <= 0)
+        {
+            error = $"Longwang model '{model.Id}' must have positive context tokens when configured.";
+            return false;
+        }
+
+        if (model.MaxTokens <= 0)
+        {
+            error = $"Longwang model '{model.Id}' must have positive max tokens.";
+            return false;
+        }
+
+        foreach (var input in NormalizeInput(model.Input))
+        {
+            if (input is not ("text" or "image" or "video" or "audio" or "file"))
+            {
+                error = $"Longwang model '{model.Id}' has invalid input modality '{input}'.";
+                return false;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.ThinkingFormat) && !IsSafeProviderId(model.ThinkingFormat))
+        {
+            error = $"Longwang model '{model.Id}' has invalid thinking format '{model.ThinkingFormat}'.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.MaxTokensField) && model.MaxTokensField is not ("max_tokens" or "max_completion_tokens"))
+        {
+            error = $"Longwang model '{model.Id}' has invalid max tokens field '{model.MaxTokensField}'.";
+            return false;
+        }
+
+        error = "";
+        return true;
+    }
+
+    private static string[] NormalizeInput(string[]? input)
+    {
+        if (input is not { Length: > 0 })
+            return ["text"];
+
+        return input
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static int CountConfigSetCommands(string configCommands)
+    {
+        var count = 0;
+        foreach (var line in configCommands.Split('\n'))
+        {
+            if (line.Contains("openclaw config set", StringComparison.Ordinal))
+                count++;
+        }
+
+        return count;
+    }
+
+    private static string ShellEscape(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+    private static string BuildAuthProfileId(ModelSetupConfig model) => $"{model.ProviderId}:manual";
+
+    private static bool IsSafeProviderId(string value)
+        => System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z0-9._-]+$");
+
+    private static bool IsSafeModelId(string value)
+        => System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z0-9._:/-]+$");
+
+    private static bool IsSafeAuthProfileId(string value)
+        => System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z0-9._:/-]+$");
 }
 
 public sealed class InstallGatewayServiceStep : SetupStep

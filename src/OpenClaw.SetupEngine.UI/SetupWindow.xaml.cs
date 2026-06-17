@@ -12,6 +12,7 @@ public sealed partial class SetupWindow : Window
 {
     private SetupConfig _config = null!;
     private SetupRunLock? _setupLock;
+    private Task<LongwangModelManifestApplyResult>? _longwangModelsManifestTask;
     private readonly TaskCompletionSource<bool> _initialContentReady =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _isClosed;
@@ -70,6 +71,7 @@ public sealed partial class SetupWindow : Window
         _config = SetupConfig.FromEnvironment(_config);
         GatewayLkgVersion.ApplyToConfig(_config);
         _config.ApplyUiDefaults(rollbackOnFailure: !HasFlag(args, "--no-rollback-on-failure"));
+        _longwangModelsManifestTask = RefreshLongwangModelsAsync(_config);
 
         Closed += (_, _) =>
         {
@@ -100,6 +102,10 @@ public sealed partial class SetupWindow : Window
 
     public void NavigateToCapabilities() => RootFrame.Navigate(typeof(CapabilitiesPage), _config);
     public void NavigateToProgress() => RootFrame.Navigate(typeof(ProgressPage), _config);
+    public void NavigateToModelSetup()
+    {
+        _ = NavigateToModelSetupAsync();
+    }
     public void NavigateToWizard() => RootFrame.Navigate(typeof(WizardPage), _config);
     public void NavigateToPermissions() => RootFrame.Navigate(typeof(PermissionsPage), _config);
     public void NavigateToComplete(bool success, TimeSpan elapsed, string? logPath, string? errorMessage = null)
@@ -127,6 +133,29 @@ public sealed partial class SetupWindow : Window
             await _initialContentReady.Task;
         else
             _initialContentReady.TrySetResult(true);
+    }
+
+    private async Task NavigateToModelSetupAsync()
+    {
+        try
+        {
+            if (_longwangModelsManifestTask != null)
+                await _longwangModelsManifestTask;
+        }
+        catch
+        {
+            // The resolver normally returns a failed result instead of throwing.
+            // If an unexpected startup failure slips through, keep setup usable
+            // with the bundled fallback list.
+        }
+
+        RootFrame.Navigate(typeof(ModelSetupPage), _config);
+    }
+
+    private static async Task<LongwangModelManifestApplyResult> RefreshLongwangModelsAsync(SetupConfig config)
+    {
+        using var logger = new SetupLogger(filePath: null);
+        return await LongwangModelManifestResolver.TryApplyAsync(config.ModelSetup, logger, CancellationToken.None);
     }
 
     public void BringToFrontForSetupLaunch()

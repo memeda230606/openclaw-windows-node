@@ -119,7 +119,7 @@ public class SetupAndConnectTests
             var root = configDoc.RootElement;
             AssertJsonPath(root, ["gateway", "port"], _fixture.GatewayPort.ToString());
             AssertJsonPath(root, ["gateway", "bind"], "loopback");
-            AssertJsonPath(root, ["gateway", "auth", "mode"], "token");
+            AssertJsonPath(root, ["gateway", "auth", "mode"], "none");
 
             var allowCommands = ReadStringArray(GetJsonPath(root, ["gateway", "nodes", "allowCommands"]));
             Assert.Equal(new CapabilitiesConfig().GetEnabledCommandIds().ToArray(), allowCommands.Order(StringComparer.OrdinalIgnoreCase).ToArray());
@@ -135,7 +135,7 @@ public class SetupAndConnectTests
 
         var gatewayAuthMode = await _fixture.RunInWslAsync("openclaw config get gateway.auth.mode", TimeSpan.FromSeconds(15));
         AssertCommandSucceeded(gatewayAuthMode, "read gateway.auth.mode");
-        Assert.Contains("token", gatewayAuthMode.Stdout);
+        Assert.Contains("none", gatewayAuthMode.Stdout);
 
         var cliAllowCommands = await _fixture.RunInWslAsync(
             "openclaw config get gateway.nodes.allowCommands",

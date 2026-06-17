@@ -31,12 +31,34 @@ public class SetupConfigTests : IDisposable
         Assert.Equal("trace", config.LogLevel);
         Assert.False(config.RollbackOnFailure);
         Assert.Equal("loopback", config.Gateway.Bind);
+        Assert.Equal("none", config.Gateway.AuthMode);
         Assert.False(config.Oss.Enabled);
         Assert.Null(config.Oss.ManifestUrl);
         Assert.Null(config.Oss.ManifestPath);
         Assert.True(config.Oss.AllowOfficialFallback);
         Assert.False(config.SkipPermissions);
         Assert.False(config.SkipWizard);
+        Assert.True(config.ModelSetup.Enabled);
+        Assert.True(config.ModelSetup.UseLongwang);
+        Assert.Equal("https://openclaw.ipk50.com/console", config.ModelSetup.ConsoleUrl);
+        Assert.Equal("https://openclaw.ipk50.com/v1", config.ModelSetup.BaseUrl);
+        Assert.Equal("longwang-qwen", config.ModelSetup.ProviderId);
+        Assert.Equal("qwen3.7-plus", config.ModelSetup.ModelId);
+        Assert.Equal("Qwen3.7 Plus", config.ModelSetup.ModelName);
+        Assert.Equal("longwang-qwen/qwen3.7-plus", config.ModelSetup.DefaultModelRef);
+        Assert.True(config.ModelSetup.ModelsManifestEnabled);
+        Assert.Equal("https://openclaw.ipk50.com/manifests/longwang-models.json", config.ModelSetup.ModelsManifestUrl);
+        Assert.Null(config.ModelSetup.ModelsManifestPath);
+        Assert.Equal(8, config.ModelSetup.ModelsManifestTimeoutSeconds);
+        Assert.True(config.ModelSetup.EffectiveModels.Count >= 15);
+        Assert.Contains(config.ModelSetup.EffectiveModels, model => model.Id == "qwen3.7-max");
+        Assert.Contains(config.ModelSetup.EffectiveModels, model => model.Id == "deepseek-v4-pro");
+        Assert.Contains(config.ModelSetup.EffectiveModels, model => model.Id == "kimi-k2.6");
+        Assert.Contains(config.ModelSetup.EffectiveModels, model => model.Id == "glm-5.2");
+        Assert.Contains(config.ModelSetup.EffectiveModels, model => model.Id == "glm-5.1");
+        Assert.Contains(config.ModelSetup.EffectiveModels, model => model.Id == "minimax-m3");
+        var glm5v = Assert.Single(config.ModelSetup.EffectiveModels, model => model.Id == "glm-5v-turbo");
+        Assert.Contains("file", glm5v.Input);
     }
 
     [Fact]
@@ -122,6 +144,17 @@ public class SetupConfigTests : IDisposable
         var prevOssEnabled = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_ENABLED");
         var prevOssManifestUrl = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_URL");
         var prevOssFallback = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK");
+        var prevModelEnabled = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_MODEL_ENABLED");
+        var prevLongwangEnabled = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_ENABLED");
+        var prevLongwangConsoleUrl = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_CONSOLE_URL");
+        var prevLongwangBaseUrl = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_BASE_URL");
+        var prevLongwangProviderId = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_PROVIDER_ID");
+        var prevLongwangModelId = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_ID");
+        var prevLongwangModelName = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_NAME");
+        var prevLongwangModelsManifestEnabled = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_ENABLED");
+        var prevLongwangModelsManifestUrl = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_URL");
+        var prevLongwangModelsManifestPath = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_PATH");
+        var prevLongwangModelsManifestTimeout = Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_TIMEOUT_SECONDS");
         try
         {
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_DISTRO", "EnvDistro");
@@ -130,6 +163,17 @@ public class SetupConfigTests : IDisposable
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ENABLED", "true");
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_URL", "https://oss.example.test/openclaw/dependencies.json");
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK", "false");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_MODEL_ENABLED", "false");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_ENABLED", "false");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_CONSOLE_URL", "https://console.example.test");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_BASE_URL", "https://api.example.test/v1");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_PROVIDER_ID", "custom-longwang");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_ID", "qwen-test");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_NAME", "Qwen Test");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_ENABLED", "false");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_URL", "https://models.example.test/longwang.json");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_PATH", @"C:\models\longwang.json");
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_TIMEOUT_SECONDS", "12");
 
             var config = SetupConfig.FromEnvironment();
             Assert.Equal("EnvDistro", config.DistroName);
@@ -138,6 +182,17 @@ public class SetupConfigTests : IDisposable
             Assert.True(config.Oss.Enabled);
             Assert.Equal("https://oss.example.test/openclaw/dependencies.json", config.Oss.ManifestUrl);
             Assert.False(config.Oss.AllowOfficialFallback);
+            Assert.False(config.ModelSetup.Enabled);
+            Assert.False(config.ModelSetup.UseLongwang);
+            Assert.Equal("https://console.example.test", config.ModelSetup.ConsoleUrl);
+            Assert.Equal("https://api.example.test/v1", config.ModelSetup.BaseUrl);
+            Assert.Equal("custom-longwang", config.ModelSetup.ProviderId);
+            Assert.Equal("qwen-test", config.ModelSetup.ModelId);
+            Assert.Equal("Qwen Test", config.ModelSetup.ModelName);
+            Assert.False(config.ModelSetup.ModelsManifestEnabled);
+            Assert.Equal("https://models.example.test/longwang.json", config.ModelSetup.ModelsManifestUrl);
+            Assert.Equal(@"C:\models\longwang.json", config.ModelSetup.ModelsManifestPath);
+            Assert.Equal(12, config.ModelSetup.ModelsManifestTimeoutSeconds);
         }
         finally
         {
@@ -147,7 +202,88 @@ public class SetupConfigTests : IDisposable
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ENABLED", prevOssEnabled);
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_MANIFEST_URL", prevOssManifestUrl);
             Environment.SetEnvironmentVariable("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK", prevOssFallback);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_MODEL_ENABLED", prevModelEnabled);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_ENABLED", prevLongwangEnabled);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_CONSOLE_URL", prevLongwangConsoleUrl);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_BASE_URL", prevLongwangBaseUrl);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_PROVIDER_ID", prevLongwangProviderId);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_ID", prevLongwangModelId);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_NAME", prevLongwangModelName);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_ENABLED", prevLongwangModelsManifestEnabled);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_URL", prevLongwangModelsManifestUrl);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_PATH", prevLongwangModelsManifestPath);
+            Environment.SetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_TIMEOUT_SECONDS", prevLongwangModelsManifestTimeout);
         }
+    }
+
+    [Fact]
+    public async Task LongwangModelManifest_AppliesLocalManifestAndKeepsConfiguredDefault()
+    {
+        var manifestPath = Path.Combine(_tempDir, "longwang-models.json");
+        File.WriteAllText(manifestPath, """
+        {
+          "schemaVersion": 1,
+          "version": "test-20260617",
+          "defaultModelId": "future-model",
+          "models": [
+            {
+              "id": "future-model",
+              "name": "Future Model",
+              "reasoning": true,
+              "input": ["TEXT", "image", "image", "file"],
+              "contextWindow": 123456,
+              "contextTokens": 120000,
+              "maxTokens": 32000,
+              "supportsTools": true,
+              "supportsUsageInStreaming": true
+            },
+            {
+              "id": "qwen3.7-plus",
+              "name": "Qwen Manifest Plus",
+              "reasoning": true,
+              "input": ["text"],
+              "contextWindow": 1000000,
+              "contextTokens": 960000,
+              "maxTokens": 65536,
+              "thinkingFormat": "qwen",
+              "supportsTools": true,
+              "supportsUsageInStreaming": true
+            }
+          ]
+        }
+        """);
+
+        var config = new SetupConfig();
+        config.ModelSetup.ModelsManifestPath = manifestPath;
+        using var logger = new SetupLogger(filePath: null);
+
+        var result = await LongwangModelManifestResolver.TryApplyAsync(config.ModelSetup, logger, CancellationToken.None);
+
+        Assert.True(result.Applied);
+        Assert.Equal("manifest-path", result.Source);
+        Assert.Equal("test-20260617", result.Version);
+        Assert.Equal(2, result.ModelCount);
+        Assert.Equal("qwen3.7-plus", config.ModelSetup.ModelId);
+        Assert.Equal("Qwen Manifest Plus", config.ModelSetup.ModelName);
+
+        var future = Assert.Single(config.ModelSetup.EffectiveModels, model => model.Id == "future-model");
+        Assert.Equal(["text", "image", "file"], future.Input);
+    }
+
+    [Fact]
+    public async Task LongwangModelManifest_UnavailableManifestKeepsBundledModels()
+    {
+        var config = new SetupConfig();
+        var bundledCount = config.ModelSetup.EffectiveModels.Count;
+        config.ModelSetup.ModelsManifestPath = Path.Combine(_tempDir, "missing.json");
+        using var logger = new SetupLogger(filePath: null);
+
+        var result = await LongwangModelManifestResolver.TryApplyAsync(config.ModelSetup, logger, CancellationToken.None);
+
+        Assert.False(result.Applied);
+        Assert.Equal("manifest-path", result.Source);
+        Assert.Equal(bundledCount, config.ModelSetup.EffectiveModels.Count);
+        Assert.Contains(config.ModelSetup.EffectiveModels, model => model.Id == "glm-5v-turbo");
     }
 
     [Fact]

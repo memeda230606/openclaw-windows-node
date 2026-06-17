@@ -28,6 +28,7 @@ public sealed class SetupConfig
     // Nested config sections — everything is configurable
     public WslConfig Wsl { get; set; } = new();
     public GatewayConfig Gateway { get; set; } = new();
+    public ModelSetupConfig ModelSetup { get; set; } = new();
     public OssMirrorConfig Oss { get; set; } = new();
     public CapabilitiesConfig Capabilities { get; set; } = new();
     public TraySettingsConfig Settings { get; set; } = new();
@@ -61,6 +62,29 @@ public sealed class SetupConfig
             config.Oss.ManifestPath = manifestPath;
         if (TryGetEnvironmentBool("OPENCLAW_SETUP_OSS_ALLOW_OFFICIAL_FALLBACK", out var allowFallback))
             config.Oss.AllowOfficialFallback = allowFallback;
+        if (TryGetEnvironmentBool("OPENCLAW_SETUP_MODEL_ENABLED", out var modelEnabled))
+            config.ModelSetup.Enabled = modelEnabled;
+        if (TryGetEnvironmentBool("OPENCLAW_SETUP_LONGWANG_ENABLED", out var longwangEnabled))
+            config.ModelSetup.UseLongwang = longwangEnabled;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_CONSOLE_URL") is { Length: > 0 } consoleUrl)
+            config.ModelSetup.ConsoleUrl = consoleUrl;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_BASE_URL") is { Length: > 0 } baseUrl)
+            config.ModelSetup.BaseUrl = baseUrl;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_PROVIDER_ID") is { Length: > 0 } providerId)
+            config.ModelSetup.ProviderId = providerId;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_ID") is { Length: > 0 } modelId)
+            config.ModelSetup.ModelId = modelId;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODEL_NAME") is { Length: > 0 } modelName)
+            config.ModelSetup.ModelName = modelName;
+        if (TryGetEnvironmentBool("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_ENABLED", out var modelsManifestEnabled))
+            config.ModelSetup.ModelsManifestEnabled = modelsManifestEnabled;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_URL") is { Length: > 0 } modelsManifestUrl)
+            config.ModelSetup.ModelsManifestUrl = modelsManifestUrl;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_PATH") is { Length: > 0 } modelsManifestPath)
+            config.ModelSetup.ModelsManifestPath = modelsManifestPath;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LONGWANG_MODELS_MANIFEST_TIMEOUT_SECONDS") is { Length: > 0 } modelsManifestTimeout &&
+            int.TryParse(modelsManifestTimeout, out var timeoutSeconds))
+            config.ModelSetup.ModelsManifestTimeoutSeconds = timeoutSeconds;
 
         return config;
     }
@@ -148,8 +172,307 @@ public sealed class GatewayConfig
     public string? Version { get; set; }
     public int HealthTimeoutSeconds { get; set; } = 90;
     public string ReloadMode { get; set; } = "hot";
-    public string AuthMode { get; set; } = "token";
+    public string AuthMode { get; set; } = "none";
     public Dictionary<string, string>? ExtraConfig { get; set; }
+}
+
+// ─── Model Setup Configuration ───
+
+public sealed class ModelSetupConfig
+{
+    public bool Enabled { get; set; } = true;
+    public bool UseLongwang { get; set; } = true;
+    public string ConsoleUrl { get; set; } = "https://openclaw.ipk50.com/console";
+    public string BaseUrl { get; set; } = "https://openclaw.ipk50.com/v1";
+    public string ProviderId { get; set; } = "longwang-qwen";
+    public string ModelId { get; set; } = "qwen3.7-plus";
+    public string ModelName { get; set; } = "Qwen3.7 Plus";
+    public string Api { get; set; } = "openai-completions";
+    public int ContextWindow { get; set; } = 1_000_000;
+    public int ContextTokens { get; set; } = 960_000;
+    public int MaxTokens { get; set; } = 65_536;
+    public bool ModelsManifestEnabled { get; set; } = true;
+    public string ModelsManifestUrl { get; set; } = "https://openclaw.ipk50.com/manifests/longwang-models.json";
+    public string? ModelsManifestPath { get; set; }
+    public int ModelsManifestTimeoutSeconds { get; set; } = 8;
+    public List<LongwangModelConfig> Models { get; set; } = DefaultLongwangModels();
+
+    [JsonIgnore]
+    public string? ApiKey { get; set; }
+
+    [JsonIgnore]
+    public string DefaultModelRef => $"{ProviderId}/{ModelId}";
+
+    [JsonIgnore]
+    public LongwangModelConfig DefaultModel =>
+        EffectiveModels.FirstOrDefault(m => string.Equals(m.Id, ModelId, StringComparison.OrdinalIgnoreCase))
+        ?? EffectiveModels.First();
+
+    [JsonIgnore]
+    public IReadOnlyList<LongwangModelConfig> EffectiveModels
+    {
+        get
+        {
+            var result = new List<LongwangModelConfig>();
+            if (Models is { Count: > 0 })
+            {
+                foreach (var model in Models)
+                {
+                    if (string.IsNullOrWhiteSpace(model.Id))
+                        continue;
+                    if (result.Any(existing => string.Equals(existing.Id, model.Id, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    result.Add(model);
+                }
+            }
+
+            if (!result.Any(model => string.Equals(model.Id, ModelId, StringComparison.OrdinalIgnoreCase)))
+                result.Insert(0, BuildLegacyDefaultModel());
+
+            return result.Count > 0 ? result : [BuildLegacyDefaultModel()];
+        }
+    }
+
+    public void SelectModel(LongwangModelConfig model)
+    {
+        if (string.IsNullOrWhiteSpace(model.Id))
+            return;
+
+        ModelId = model.Id;
+        ModelName = string.IsNullOrWhiteSpace(model.Name) ? model.Id : model.Name;
+        ContextWindow = model.ContextWindow;
+        ContextTokens = model.ContextTokens ?? model.ContextWindow;
+        MaxTokens = model.MaxTokens;
+    }
+
+    private LongwangModelConfig BuildLegacyDefaultModel()
+        => new()
+        {
+            Id = ModelId,
+            Name = string.IsNullOrWhiteSpace(ModelName) ? ModelId : ModelName,
+            Reasoning = true,
+            Input = ["text", "image", "video"],
+            ContextWindow = ContextWindow,
+            ContextTokens = ContextTokens,
+            MaxTokens = MaxTokens,
+            ThinkingFormat = "qwen",
+            SupportsTools = true,
+            SupportsUsageInStreaming = true
+        };
+
+    private static List<LongwangModelConfig> DefaultLongwangModels()
+        => [
+            new()
+            {
+                Id = "qwen3.7-plus",
+                Name = "Qwen3.7 Plus",
+                Reasoning = true,
+                Input = ["text", "image", "video"],
+                ContextWindow = 1_000_000,
+                ContextTokens = 960_000,
+                MaxTokens = 65_536,
+                ThinkingFormat = "qwen",
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "qwen3.7-max",
+                Name = "Qwen3.7 Max",
+                Reasoning = true,
+                Input = ["text", "image"],
+                ContextWindow = 1_000_000,
+                ContextTokens = 960_000,
+                MaxTokens = 65_536,
+                ThinkingFormat = "qwen",
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "deepseek-v4-pro",
+                Name = "DeepSeek V4 Pro",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 1_000_000,
+                ContextTokens = 960_000,
+                MaxTokens = 65_536,
+                ThinkingFormat = "deepseek",
+                SupportsTools = true,
+                SupportsUsageInStreaming = true,
+                SupportsReasoningEffort = true,
+                MaxTokensField = "max_tokens"
+            },
+            new()
+            {
+                Id = "deepseek-v4-flash",
+                Name = "DeepSeek V4 Flash",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 1_000_000,
+                ContextTokens = 960_000,
+                MaxTokens = 65_536,
+                ThinkingFormat = "deepseek",
+                SupportsTools = true,
+                SupportsUsageInStreaming = true,
+                SupportsReasoningEffort = true,
+                MaxTokensField = "max_tokens"
+            },
+            new()
+            {
+                Id = "kimi-k2.7-code",
+                Name = "Kimi K2.7 Code",
+                Reasoning = true,
+                Input = ["text", "image", "video"],
+                ContextWindow = 262_144,
+                ContextTokens = 245_760,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "kimi-k2.6",
+                Name = "Kimi K2.6",
+                Reasoning = true,
+                Input = ["text", "image", "video"],
+                ContextWindow = 262_144,
+                ContextTokens = 245_760,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "kimi-k2.5",
+                Name = "Kimi K2.5",
+                Reasoning = true,
+                Input = ["text", "image", "video"],
+                ContextWindow = 262_144,
+                ContextTokens = 245_760,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "glm-5.2",
+                Name = "GLM-5.2",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 1_000_000,
+                ContextTokens = 960_000,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true,
+                SupportsReasoningEffort = true,
+                MaxTokensField = "max_tokens"
+            },
+            new()
+            {
+                Id = "glm-5.1",
+                Name = "GLM-5.1",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 200_000,
+                ContextTokens = 192_000,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true,
+                SupportsReasoningEffort = true,
+                MaxTokensField = "max_tokens"
+            },
+            new()
+            {
+                Id = "glm-5v-turbo",
+                Name = "GLM-5V-Turbo",
+                Reasoning = true,
+                Input = ["text", "image", "video", "file"],
+                ContextWindow = 200_000,
+                ContextTokens = 192_000,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true,
+                MaxTokensField = "max_tokens"
+            },
+            new()
+            {
+                Id = "minimax-m3",
+                Name = "MiniMax M3",
+                Reasoning = true,
+                Input = ["text", "image", "video"],
+                ContextWindow = 1_000_000,
+                ContextTokens = 960_000,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "minimax-m2.7",
+                Name = "MiniMax M2.7",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 204_800,
+                ContextTokens = 196_608,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "minimax-m2.7-highspeed",
+                Name = "MiniMax M2.7 Highspeed",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 204_800,
+                ContextTokens = 196_608,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "minimax-m2.5",
+                Name = "MiniMax M2.5",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 204_800,
+                ContextTokens = 196_608,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            },
+            new()
+            {
+                Id = "minimax-m2.5-highspeed",
+                Name = "MiniMax M2.5 Highspeed",
+                Reasoning = true,
+                Input = ["text"],
+                ContextWindow = 204_800,
+                ContextTokens = 196_608,
+                MaxTokens = 65_536,
+                SupportsTools = true,
+                SupportsUsageInStreaming = true
+            }
+        ];
+}
+
+public sealed class LongwangModelConfig
+{
+    public string Id { get; set; } = "qwen3.7-plus";
+    public string Name { get; set; } = "Qwen3.7 Plus";
+    public bool Reasoning { get; set; } = true;
+    public string[] Input { get; set; } = ["text"];
+    public int ContextWindow { get; set; } = 1_000_000;
+    public int? ContextTokens { get; set; }
+    public int MaxTokens { get; set; } = 65_536;
+    public string? ThinkingFormat { get; set; }
+    public bool SupportsTools { get; set; } = true;
+    public bool SupportsUsageInStreaming { get; set; } = true;
+    public bool SupportsReasoningEffort { get; set; }
+    public string? MaxTokensField { get; set; }
 }
 
 // ─── OSS Mirror Configuration ───

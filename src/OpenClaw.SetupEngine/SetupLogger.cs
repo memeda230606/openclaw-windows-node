@@ -22,7 +22,7 @@ public sealed partial class SetupLogger : IDisposable
     public string RunId => _runId;
     public string? FilePath => _filePath;
 
-    public SetupLogger(string? filePath, LogLevel minLevel = LogLevel.Trace)
+    public SetupLogger(string? filePath, LogLevel minLevel = LogLevel.Trace, bool append = false)
     {
         _minLevel = minLevel;
         _runId = Guid.NewGuid().ToString("N")[..12];
@@ -32,7 +32,7 @@ public sealed partial class SetupLogger : IDisposable
             _filePath = filePath;
             var dir = Path.GetDirectoryName(filePath);
             if (dir != null) Directory.CreateDirectory(dir);
-            _writer = new StreamWriter(filePath, append: false) { AutoFlush = true };
+            _writer = new StreamWriter(filePath, append) { AutoFlush = true };
         }
     }
 

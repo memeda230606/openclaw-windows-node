@@ -1243,6 +1243,18 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public void ConfigureGateway_DefaultsToLoopbackNoAuth()
+    {
+        var commands = ConfigureGatewayStep.BuildConfigCommands(
+            new GatewayConfig { Bind = "loopback" },
+            18789,
+            "'[]'");
+
+        Assert.Contains("openclaw config set gateway.auth.mode none", commands);
+        Assert.Contains("openclaw config set gateway.auth.token \"$OPENCLAW_GATEWAY_TOKEN\"", commands);
+    }
+
+    [Fact]
     public void ConfigureGateway_AddsDevicePairPublicUrlForLoopbackGateway()
     {
         var commands = ConfigureGatewayStep.BuildConfigCommands(
@@ -1426,6 +1438,84 @@ public class SetupStepsTests : IDisposable
             "openclaw config set gateway.mode local");
 
         Assert.True(timeout >= ConfigureGatewayStep.MinConfigurationTimeout);
+    }
+
+    [Fact]
+    public void ConfigureLongwangModel_BuildConfigCommands_WritesProviderAndDefaultWithoutSecret()
+    {
+        var model = new ModelSetupConfig
+        {
+            ApiKey = "sk-lw-v1-secret-for-test"
+        };
+
+        var commands = ConfigureLongwangModelStep.BuildConfigCommands(model);
+
+        Assert.Contains("openclaw config set env.LONGWANG_API_KEY \"$LONGWANG_SETUP_API_KEY\" >/dev/null", commands);
+        Assert.Contains("printf '%s\\n' \"$LONGWANG_SETUP_API_KEY\" | openclaw models auth paste-api-key --provider 'longwang-qwen' --profile-id 'longwang-qwen:manual' >/dev/null", commands);
+        Assert.Contains("openclaw config set models.providers.longwang-qwen", commands);
+        Assert.Contains("openclaw config set agents.defaults.models", commands);
+        Assert.Contains("openclaw config set agents.defaults.model.primary 'longwang-qwen/qwen3.7-plus'", commands);
+        Assert.Contains("openclaw models auth list --provider 'longwang-qwen' >/dev/null", commands);
+        Assert.Contains("\"apiKey\":\"${LONGWANG_API_KEY}\"", commands);
+        Assert.Contains("\"id\":\"qwen3.7-plus\"", commands);
+        Assert.Contains("\"name\":\"Qwen3.7 Plus\"", commands);
+        Assert.Contains("\"id\":\"qwen3.7-max\"", commands);
+        Assert.Contains("\"name\":\"Qwen3.7 Max\"", commands);
+        Assert.Contains("\"id\":\"deepseek-v4-pro\"", commands);
+        Assert.Contains("\"thinkingFormat\":\"deepseek\"", commands);
+        Assert.Contains("\"id\":\"kimi-k2.6\"", commands);
+        Assert.Contains("\"id\":\"glm-5.2\"", commands);
+        Assert.Contains("\"id\":\"glm-5.1\"", commands);
+        Assert.Contains("\"id\":\"glm-5v-turbo\"", commands);
+        Assert.Contains("\"input\":[\"text\",\"image\",\"video\",\"file\"]", commands);
+        Assert.Contains("\"id\":\"minimax-m3\"", commands);
+        Assert.Contains("\"longwang-qwen/qwen3.7-max\":{}", commands);
+        Assert.Contains("\"longwang-qwen/deepseek-v4-pro\":{}", commands);
+        Assert.Contains("\"longwang-qwen/glm-5v-turbo\":{}", commands);
+        Assert.DoesNotContain("sk-lw-v1-secret-for-test", commands);
+    }
+
+    [Fact]
+    public async Task ConfigureLongwangModel_PassesApiKeyViaWslEnvironment()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Ok(),
+            (_, _, _) => Ok(ConfigureLongwangModelStep.SuccessMarker));
+        var config = new SetupConfig
+        {
+            ModelSetup = new ModelSetupConfig
+            {
+                ApiKey = "sk-lw-v1-secret-for-test"
+            }
+        };
+        var ctx = CreateContext(config, commands);
+
+        var result = await new ConfigureLongwangModelStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var wslCall = Assert.Single(commands.WslCalls);
+        Assert.NotNull(wslCall.Environment);
+        Assert.Equal("sk-lw-v1-secret-for-test", wslCall.Environment![ConfigureLongwangModelStep.ApiKeyEnvironmentName]);
+        Assert.DoesNotContain("sk-lw-v1-secret-for-test", wslCall.Command);
+        Assert.True(wslCall.Timeout >= ConfigureLongwangModelStep.MinConfigurationTimeout);
+    }
+
+    [Fact]
+    public async Task ConfigureLongwangModel_RequiresApiKey()
+    {
+        var ctx = CreateContext(new SetupConfig
+        {
+            ModelSetup = new ModelSetupConfig
+            {
+                UseLongwang = true,
+                ApiKey = ""
+            }
+        }, new FakeCommandRunner(_ => Ok(), (_, _, _) => Ok()));
+
+        var result = await new ConfigureLongwangModelStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("API key", result.Message);
     }
 
     [Theory]

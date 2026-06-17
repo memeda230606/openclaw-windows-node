@@ -79,10 +79,220 @@
     "HealthTimeoutSeconds": 90,
     // Config reload strategy: "hot" (no restart), "restart"
     "ReloadMode": "hot",
-    // Auth mode: "token" (shared secret)
-    "AuthMode": "token",
+    // Auth mode: "none" is allowed only for loopback installs so local dashboard opens without an extra token.
+    "AuthMode": "none",
     // Additional gateway config key/value pairs (applied via `openclaw config set`)
     "ExtraConfig": null
+  },
+
+  // ─── Model Provider Setup ───
+  // Controls the simplified UI page that writes Longwang API key and default model settings.
+  "ModelSetup": {
+    // Show the model/API key page after the WSL gateway is installed.
+    "Enabled": true,
+    // Default selected option: get and use a Longwang API key from the website console.
+    "UseLongwang": true,
+    // Website console opened from the setup wizard.
+    "ConsoleUrl": "https://openclaw.ipk50.com/console",
+    // OpenAI-compatible API endpoint for Longwang gateway.
+    "BaseUrl": "https://openclaw.ipk50.com/v1",
+    // OpenClaw provider id and default model written into the gateway config.
+    "ProviderId": "longwang-qwen",
+    "ModelId": "qwen3.7-plus",
+    "ModelName": "Qwen3.7 Plus",
+    "Api": "openai-completions",
+    "ContextWindow": 1000000,
+    "ContextTokens": 960000,
+    "MaxTokens": 65536,
+    // true = fetch the latest Longwang model list from the online manifest during setup startup.
+    "ModelsManifestEnabled": true,
+    // HTTPS JSON manifest URL hosted by the Longwang download site. Updating this file can add models without rebuilding the installer.
+    "ModelsManifestUrl": "https://openclaw.ipk50.com/manifests/longwang-models.json",
+    // Local JSON manifest path for offline/test runs. Takes precedence over ModelsManifestUrl when set.
+    "ModelsManifestPath": null,
+    // Network timeout for the Longwang model manifest. Manifest failure falls back to the bundled Models list below.
+    "ModelsManifestTimeoutSeconds": 8,
+    // Bundled fallback model list. ModelId above selects the default when the online manifest is unavailable.
+    "Models": [
+      {
+        "Id": "qwen3.7-plus",
+        "Name": "Qwen3.7 Plus",
+        "Reasoning": true,
+        "Input": ["text", "image", "video"],
+        "ContextWindow": 1000000,
+        "ContextTokens": 960000,
+        "MaxTokens": 65536,
+        "ThinkingFormat": "qwen",
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "qwen3.7-max",
+        "Name": "Qwen3.7 Max",
+        "Reasoning": true,
+        "Input": ["text", "image"],
+        "ContextWindow": 1000000,
+        "ContextTokens": 960000,
+        "MaxTokens": 65536,
+        "ThinkingFormat": "qwen",
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "deepseek-v4-pro",
+        "Name": "DeepSeek V4 Pro",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 1000000,
+        "ContextTokens": 960000,
+        "MaxTokens": 65536,
+        "ThinkingFormat": "deepseek",
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true,
+        "SupportsReasoningEffort": true,
+        "MaxTokensField": "max_tokens"
+      },
+      {
+        "Id": "deepseek-v4-flash",
+        "Name": "DeepSeek V4 Flash",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 1000000,
+        "ContextTokens": 960000,
+        "MaxTokens": 65536,
+        "ThinkingFormat": "deepseek",
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true,
+        "SupportsReasoningEffort": true,
+        "MaxTokensField": "max_tokens"
+      },
+      {
+        "Id": "kimi-k2.7-code",
+        "Name": "Kimi K2.7 Code",
+        "Reasoning": true,
+        "Input": ["text", "image", "video"],
+        "ContextWindow": 262144,
+        "ContextTokens": 245760,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "kimi-k2.6",
+        "Name": "Kimi K2.6",
+        "Reasoning": true,
+        "Input": ["text", "image", "video"],
+        "ContextWindow": 262144,
+        "ContextTokens": 245760,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "kimi-k2.5",
+        "Name": "Kimi K2.5",
+        "Reasoning": true,
+        "Input": ["text", "image", "video"],
+        "ContextWindow": 262144,
+        "ContextTokens": 245760,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "glm-5.2",
+        "Name": "GLM-5.2",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 1000000,
+        "ContextTokens": 960000,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true,
+        "SupportsReasoningEffort": true,
+        "MaxTokensField": "max_tokens"
+      },
+      {
+        "Id": "glm-5.1",
+        "Name": "GLM-5.1",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 200000,
+        "ContextTokens": 192000,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true,
+        "SupportsReasoningEffort": true,
+        "MaxTokensField": "max_tokens"
+      },
+      {
+        "Id": "glm-5v-turbo",
+        "Name": "GLM-5V-Turbo",
+        "Reasoning": true,
+        "Input": ["text", "image", "video", "file"],
+        "ContextWindow": 200000,
+        "ContextTokens": 192000,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true,
+        "MaxTokensField": "max_tokens"
+      },
+      {
+        "Id": "minimax-m3",
+        "Name": "MiniMax M3",
+        "Reasoning": true,
+        "Input": ["text", "image", "video"],
+        "ContextWindow": 1000000,
+        "ContextTokens": 960000,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "minimax-m2.7",
+        "Name": "MiniMax M2.7",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 204800,
+        "ContextTokens": 196608,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "minimax-m2.7-highspeed",
+        "Name": "MiniMax M2.7 Highspeed",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 204800,
+        "ContextTokens": 196608,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "minimax-m2.5",
+        "Name": "MiniMax M2.5",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 204800,
+        "ContextTokens": 196608,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      },
+      {
+        "Id": "minimax-m2.5-highspeed",
+        "Name": "MiniMax M2.5 Highspeed",
+        "Reasoning": true,
+        "Input": ["text"],
+        "ContextWindow": 204800,
+        "ContextTokens": 196608,
+        "MaxTokens": 65536,
+        "SupportsTools": true,
+        "SupportsUsageInStreaming": true
+      }
+    ]
   },
 
   // ─── OSS Mirror Configuration ───
