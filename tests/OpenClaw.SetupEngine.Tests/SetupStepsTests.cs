@@ -1467,7 +1467,8 @@ public class SetupStepsTests : IDisposable
         Assert.Contains("\"id\":\"glm-5.2\"", commands);
         Assert.Contains("\"id\":\"glm-5.1\"", commands);
         Assert.Contains("\"id\":\"glm-5v-turbo\"", commands);
-        Assert.Contains("\"input\":[\"text\",\"image\",\"video\",\"file\"]", commands);
+        Assert.Contains("\"input\":[\"text\",\"image\",\"video\"]", commands);
+        Assert.DoesNotContain("\"file\"", commands);
         Assert.Contains("\"id\":\"minimax-m3\"", commands);
         Assert.Contains("\"longwang-qwen/qwen3.7-max\":{}", commands);
         Assert.Contains("\"longwang-qwen/deepseek-v4-pro\":{}", commands);

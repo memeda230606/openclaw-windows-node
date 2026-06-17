@@ -1748,7 +1748,7 @@ public sealed class ConfigureLongwangModelStep : SetupStep
             ["id"] = model.Id,
             ["name"] = string.IsNullOrWhiteSpace(model.Name) ? model.Id : model.Name,
             ["reasoning"] = model.Reasoning,
-            ["input"] = NormalizeInput(model.Input),
+            ["input"] = NormalizeOpenClawInput(model.Input),
             ["cost"] = new
             {
                 input = 0,
@@ -1830,6 +1830,15 @@ public sealed class ConfigureLongwangModelStep : SetupStep
             .Select(value => value.Trim().ToLowerInvariant())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static string[] NormalizeOpenClawInput(string[]? input)
+    {
+        var normalized = NormalizeInput(input)
+            .Where(value => value is "text" or "image" or "video" or "audio")
+            .ToArray();
+
+        return normalized.Length > 0 ? normalized : ["text"];
     }
 
     private static int CountConfigSetCommands(string configCommands)
